@@ -108,14 +108,12 @@ class ModelControl(commands.Cog):
 
         mem_before = self._get_mem_mb()
 
-        # Unload via the clean method on the Prediction class
         try:
-            self.predictor.unload_models()  # handles nullifying + gc.collect() internally
+            self.predictor.unload_models()
         except Exception as e:
             await ctx.reply(f"❌ Error while unloading: `{e}`", mention_author=False)
             return
 
-        # Second GC pass for anything the first missed
         await asyncio.sleep(0.5)
         gc.collect()
 
@@ -128,6 +126,88 @@ class ModelControl(commands.Cog):
             f"> 💾 Total RAM now: `{mem_after:.1f} MB`\n"
             f"> Use `{ctx.prefix}loadmodel` to reload when needed.",
             mention_author=False
+        )
+
+    # ── Reload ────────────────────────────────────────────────────────────────
+
+    @commands.command(name="reloadmodel", aliases=["rm", "modelreload", "refreshmodel"])
+    @is_admin_or_owner()
+    async def reloadmodel_command(self, ctx):
+        """Force re-download the latest models from GitHub and reload into RAM"""
+        if self.predictor is None:
+            await ctx.reply("❌ Predictor not initialised — bot may still be starting up.", mention_author=False)
+            return
+
+        loading_msg = await ctx.reply("⏳ Reloading models from GitHub…", mention_author=False)
+
+        # Step 1: Unload if currently loaded
+        if self.predictor.models_initialized:
+            try:
+                self.predictor.unload_models()
+                await asyncio.sleep(0.5)
+                gc.collect()
+            except Exception as e:
+                await loading_msg.edit(content=f"❌ Failed to unload existing models: `{e}`")
+                return
+
+        # Step 2: Delete cached model files so ensure_models_cached re-downloads them
+        from predict import (
+            PRIMARY_ONNX_PATH, PRIMARY_LABELS_PATH,
+            SECONDARY_ONNX_PATH, SECONDARY_LABELS_PATH
+        )
+
+        files_to_delete = [
+            PRIMARY_ONNX_PATH,
+            PRIMARY_LABELS_PATH,
+            SECONDARY_ONNX_PATH,
+            SECONDARY_LABELS_PATH,
+        ]
+
+        deleted = []
+        for path in files_to_delete:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                    deleted.append(os.path.basename(path))
+                except Exception as e:
+                    await loading_msg.edit(content=f"❌ Failed to delete `{os.path.basename(path)}`: `{e}`")
+                    return
+
+        await loading_msg.edit(content=f"⏳ Cache cleared. Downloading latest models from GitHub…")
+
+        # Step 3: Re-download and load
+        mem_before = self._get_mem_mb()
+        start_time = time.monotonic()
+
+        try:
+            await self.predictor.initialize_models(self.http_session)
+        except Exception as e:
+            await loading_msg.edit(content=f"❌ Failed to load models: `{e}`")
+            return
+
+        elapsed = time.monotonic() - start_time
+        mem_after = self._get_mem_mb()
+        mem_used = mem_after - mem_before
+
+        # Warm guild cache
+        pred_cog = self.bot.get_cog('Prediction')
+        if pred_cog and hasattr(pred_cog, 'gcache'):
+            try:
+                guild_ids = [g.id for g in self.bot.guilds]
+                await pred_cog.gcache.warm(guild_ids)
+            except Exception as e:
+                print(f"[RELOADMODEL] Cache warm-up failed (non-fatal): {e}")
+
+        deleted_str = ", ".join(f"`{f}`" for f in deleted) if deleted else "none"
+
+        await loading_msg.edit(
+            content=(
+                f"✅ **Models reloaded from GitHub!**\n"
+                f"> 🗑 Files re-downloaded: {deleted_str}\n"
+                f"> ⏱ Load time: `{elapsed:.1f}s`\n"
+                f"> 📦 RAM used by models: `+{mem_used:.1f} MB`\n"
+                f"> 💾 Total RAM now: `{mem_after:.1f} MB`"
+            )
         )
 
     # ── Status ────────────────────────────────────────────────────────────────
@@ -145,19 +225,16 @@ class ModelControl(commands.Cog):
         prediction_count = getattr(self.bot, 'prediction_count', 0)
         cache_size = len(self.predictor.cache.cache)
 
-        # Primary model info
         if loaded and self.predictor.primary_class_names:
             primary_info = f"`{len(self.predictor.primary_class_names)} classes` — 224×224"
         else:
             primary_info = "_not loaded_"
 
-        # Secondary model info
         if loaded and self.predictor.secondary_class_names:
             secondary_info = f"`{len(self.predictor.secondary_class_names)} classes` — 224×224"
         else:
             secondary_info = "_not loaded_"
 
-        # Check model cache files on disk
         from predict import (
             PRIMARY_ONNX_PATH, PRIMARY_LABELS_PATH,
             SECONDARY_ONNX_PATH, SECONDARY_LABELS_PATH
@@ -183,41 +260,13 @@ class ModelControl(commands.Cog):
             title="🤖 Model Status",
             color=discord.Color.green() if loaded else discord.Color.red()
         )
-        embed.add_field(
-            name="Model State",
-            value=f"{status_emoji} {status_text}",
-            inline=False
-        )
-        embed.add_field(
-            name="Primary Model",
-            value=primary_info,
-            inline=True
-        )
-        embed.add_field(
-            name="Secondary Model",
-            value=secondary_info,
-            inline=True
-        )
-        embed.add_field(
-            name="RAM Usage",
-            value=f"`{mem_mb:.1f} MB`",
-            inline=True
-        )
-        embed.add_field(
-            name="Predictions This Session",
-            value=f"`{prediction_count}`",
-            inline=True
-        )
-        embed.add_field(
-            name="Prediction Cache",
-            value=f"`{cache_size}` entries",
-            inline=True
-        )
-        embed.add_field(
-            name="Model Files on Disk",
-            value=disk_lines,
-            inline=False
-        )
+        embed.add_field(name="Model State", value=f"{status_emoji} {status_text}", inline=False)
+        embed.add_field(name="Primary Model", value=primary_info, inline=True)
+        embed.add_field(name="Secondary Model", value=secondary_info, inline=True)
+        embed.add_field(name="RAM Usage", value=f"`{mem_mb:.1f} MB`", inline=True)
+        embed.add_field(name="Predictions This Session", value=f"`{prediction_count}`", inline=True)
+        embed.add_field(name="Prediction Cache", value=f"`{cache_size}` entries", inline=True)
+        embed.add_field(name="Model Files on Disk", value=disk_lines, inline=False)
 
         if not loaded:
             embed.set_footer(text=f"Use {ctx.prefix}loadmodel to load models into RAM")
@@ -230,6 +279,7 @@ class ModelControl(commands.Cog):
 
     @loadmodel_command.error
     @unloadmodel_command.error
+    @reloadmodel_command.error
     @modelstatus_command.error
     async def model_command_error(self, ctx, error):
         if isinstance(error, commands.CheckFailure):
