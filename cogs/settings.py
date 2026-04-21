@@ -319,14 +319,34 @@ class Settings(commands.Cog):
     # p!clear-server-pings  (bot owner / server owner / admin only)
     # ------------------------------------------------------------------
     @commands.command(name="clear-server-pings", aliases=["csp", "clearserverpings", "resetpings"])
-    async def clear_server_pings_command(self, ctx, target: discord.Member = None):
+    async def clear_server_pings_command(self, ctx, target: str = None):
         """Clear all ping data (collections, shiny hunts, type pings, region pings)
         for a specific user OR every user in this server.
 
         Usage:
-            p!clear-server-pings           → clears ALL users in this server
-            p!clear-server-pings @user     → clears only that user in this server
+            p!clear-server-pings             → clears ALL users in this server
+            p!clear-server-pings @user       → clears only that user (must be in server)
+            p!clear-server-pings <user_id>   → clears by raw ID (works even if user left)
         """
+        # ── Resolve target user ID ─────────────────────────────────────
+        target_id   = None
+        target_name = None
+        if target is not None:
+            # Strip <@> mention formatting if present
+            raw = target.strip("<@!>")
+            if raw.isdigit():
+                target_id = int(raw)
+                # Try to get a display name (may fail if user left)
+                user_obj = self.bot.get_user(target_id)
+                if user_obj is None:
+                    try:
+                        user_obj = await self.bot.fetch_user(target_id)
+                    except discord.NotFound:
+                        pass
+                target_name = str(user_obj) if user_obj else f"User {target_id}"
+            else:
+                await ctx.reply("❌ Invalid user. Use a @mention or numeric user ID.", mention_author=False)
+                return
         # ── Permission check ───────────────────────────────────────────
         is_owner     = await self.bot.is_owner(ctx.author)
         is_srv_owner = ctx.author.id == ctx.guild.owner_id
@@ -343,9 +363,9 @@ class Settings(commands.Cog):
         db       = self.db.db   # raw Motor database
 
         # ── Confirmation prompt ────────────────────────────────────────
-        if target:
+        if target_id:
             prompt_text = (
-                f"⚠️ This will clear **all ping data** for {target.mention} in **{ctx.guild.name}**.\n"
+                f"⚠️ This will clear **all ping data** for **{target_name}** (`{target_id}`) in **{ctx.guild.name}**.\n"
                 f"Reply with `confirm` within 30 seconds to proceed."
             )
         else:
@@ -370,14 +390,14 @@ class Settings(commands.Cog):
             return
 
         # ── Clear data ─────────────────────────────────────────────────
-        if target:
-            col_res  = await db.collections.delete_many({"user_id": target.id, "guild_id": guild_id})
-            shy_res  = await db.shiny_hunts.delete_many({"user_id": target.id, "guild_id": guild_id})
-            type_res = await db.type_pings.delete_many( {"user_id": target.id, "guild_id": guild_id})
-            rgn_res  = await db.region_pings.delete_many({"user_id": target.id, "guild_id": guild_id})
+        if target_id:
+            col_res  = await db.collections.delete_many( {"user_id": target_id, "guild_id": guild_id})
+            shy_res  = await db.shiny_hunts.delete_many( {"user_id": target_id, "guild_id": guild_id})
+            type_res = await db.type_pings.delete_many(  {"user_id": target_id, "guild_id": guild_id})
+            rgn_res  = await db.region_pings.delete_many({"user_id": target_id, "guild_id": guild_id})
 
             embed = discord.Embed(title="✅ User Ping Data Cleared", color=EMBED_COLOR)
-            embed.add_field(name="User",         value=target.mention,                   inline=False)
+            embed.add_field(name="User",         value=f"{target_name} (`{target_id}`)", inline=False)
             embed.add_field(name="Server",       value=ctx.guild.name,                   inline=False)
             embed.add_field(name="Collections",  value=f"{col_res.deleted_count} removed",  inline=True)
             embed.add_field(name="Shiny Hunts",  value=f"{shy_res.deleted_count} removed",  inline=True)
@@ -408,11 +428,7 @@ class Settings(commands.Cog):
 
     @clear_server_pings_command.error
     async def clear_server_pings_error(self, ctx, error):
-        if isinstance(error, commands.BadArgument):
-            await ctx.reply(
-                "❌ Couldn't find that user. Use a @mention or user ID.",
-                mention_author=False
-            )
+        await ctx.reply(f"❌ An unexpected error occurred: {error}", mention_author=False)
 
 
 async def setup(bot):
