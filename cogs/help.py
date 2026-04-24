@@ -326,7 +326,7 @@ class Help(commands.Cog):
                 name=f"`{prefix}server-settings`",
                 value=(
                     "View all current server settings\n"
-                    f"**Aliases:** `{prefix}ss`, `{prefix}settings`, `{prefix}serversettings`"
+                    f"**Aliases:** `{prefix}ss`, `{prefix}ssettings`, `{prefix}serversettings`"
                 ),
                 inline=False
             )
@@ -378,6 +378,18 @@ class Help(commands.Cog):
                     "Enable/disable the **Shortest Name** line in predictions (off by default)\n"
                     "When enabled, shows the shortest known name for each Pokemon\n"
                     f"**Example:** `{prefix}toggle best_name`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}clear-pings [@user | user_id]`",
+                value=(
+                    "Clear all ping data (collections, shiny hunts, type pings, region pings) for this server\n"
+                    f"**Aliases:** `{prefix}clearpings`, `{prefix}clearserverpings`, `{prefix}resetpings`\n"
+                    "• No argument → clears **all users** in the server (prompts for confirmation)\n"
+                    "• With @user or user ID → clears only that user\n"
+                    "⚠️ Requires server owner, administrator, or bot owner"
                 ),
                 inline=False
             )
@@ -794,6 +806,7 @@ class Help(commands.Cog):
                 name="⚙️ Settings",
                 value=(
                     f"`{prefix}afk` • `{prefix}server-settings`\n"
+                    f"`{prefix}clear-pings [@user]`\n"
                     f"**Admin:** `{prefix}rare-role` • `{prefix}regional-role` • `{prefix}only-pings` • `{prefix}toggle best_name`"
                 ),
                 inline=False
