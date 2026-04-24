@@ -269,7 +269,7 @@ class StarboardSettings(commands.Cog):
     async def starboard_milestone_command(self, ctx, channel: str = None):
         """Set the milestone catch starboard channel for this server.
 
-        Logs catches when a user reaches exactly 1,000 / 10,000 / 100,000
+        Logs catches when a user reaches exactly 100 / 1,000 / 10,000 / 100,000
         of any single Pokémon species.
 
         Example: p!starboard-milestone #milestones
@@ -278,7 +278,7 @@ class StarboardSettings(commands.Cog):
         if not channel:
             await ctx.reply(
                 "❌ Please mention a channel, provide a channel ID, or use 'none' to remove.\n"
-                "This channel logs 1,000 / 10,000 / 100,000 catches of a single Pokémon.",
+                "This channel logs 100 / 1,000 / 10,000 / 100,000 catches of a single Pokémon.",
                 mention_author=False
             )
             return
@@ -294,7 +294,7 @@ class StarboardSettings(commands.Cog):
             await self.db.set_starboard_milestone_channel(ctx.guild.id, text_channel.id)
             await ctx.reply(
                 f"✅ Milestone starboard channel set to {text_channel.mention}\n"
-                f"Will log catches at **1,000 / 10,000 / 100,000** of any Pokémon.",
+                f"Will log catches at **100 / 1,000 /10,000 / 100,000** of any Pokémon.",
                 mention_author=False
             )
         except commands.BadArgument:
