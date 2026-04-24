@@ -554,6 +554,13 @@ class Database:
             upsert=True
         )
 
+    async def set_starboard_milestone_channel(self, guild_id: int, channel_id: int):
+        await self.db.guild_settings.update_one(
+            {"guild_id": guild_id},
+            {"$set": {"starboard_milestone_channel_id": channel_id}},
+            upsert=True
+        )
+
     # Global starboard channels
     async def set_global_starboard_catch_channel(self, channel_id: int):
         await self.db.global_settings.update_one(
@@ -586,6 +593,17 @@ class Database:
 
     async def get_global_starboard_unbox_channel(self) -> Optional[int]:
         settings = await self.db.global_settings.find_one({"_id": "starboard_unbox"})
+        return settings.get('global_channel_id') if settings else None
+
+    async def set_global_starboard_milestone_channel(self, channel_id: int):
+        await self.db.global_settings.update_one(
+            {"_id": "starboard_milestone"},
+            {"$set": {"global_channel_id": channel_id}},
+            upsert=True
+        )
+
+    async def get_global_starboard_milestone_channel(self) -> Optional[int]:
+        settings = await self.db.global_settings.find_one({"_id": "starboard_milestone"})
         return settings.get('global_channel_id') if settings else None
 
     # -------------------------------------------------------------------------
