@@ -521,7 +521,7 @@ class Help(commands.Cog):
                     "• If primary ≥ **94%** → primary result is used\n"
                     "• If secondary ≥ **90%** → secondary result is used\n"
                     "• If both are below threshold → primary result is used as fallback\n"
-                    "• Some Pokémon (e.g. Oricorio forms) always prefer the secondary model result"
+                    "• Some Pokémon always prefer the secondary model result"
                 ),
                 inline=False
             )
