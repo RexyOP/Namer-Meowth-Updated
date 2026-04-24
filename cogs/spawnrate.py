@@ -250,7 +250,6 @@ class SpawnRate(commands.Cog):
             dex_num = entry["dex"]
             embed = discord.Embed(title=f"Spawn Rate — {entry['name']}", color=EMBED_COLOR)
             embed.set_thumbnail(url=f"https://cdn.poketwo.net/images/{dex_num}.png")
-            embed.add_field(name="Dex",          value=f"#{dex_num}",       inline=True)
             embed.add_field(name="Spawn Chance", value=entry["chance"],     inline=True)
             embed.add_field(name="Percentage",   value=entry["chance_pct"], inline=True)
             if pokemon_name.strip().lower() != entry["name"].lower():
