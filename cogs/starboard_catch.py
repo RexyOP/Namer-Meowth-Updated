@@ -72,7 +72,7 @@ class StarboardCatch(commands.Cog):
         }
     
     # Milestone catch counts that qualify for the milestone starboard
-    MILESTONE_COUNTS = {1_000, 10_000, 100_000}
+    MILESTONE_COUNTS = {100, 1_000, 10_000, 100_000}
 
     def parse_poketwo_milestone_message(self, message_content: str) -> dict:
         """Parse Poketwo milestone catch message.
@@ -217,25 +217,28 @@ class StarboardCatch(commands.Cog):
     
     # Witty footer lines for milestone embeds
     MILESTONE_FOOTER_LINES = [
-    "unemployed final boss",
-    "grinding pixels like rent depends on it",
-    "sleep schedule left the chat",
-    "breaking records and mental stability",
-    "built different • runs on zero sunlight",
-    "running purely on caffeine and bad choices",
-    "this is why the wifi bill is high",
-    "this is what happens when 'just one more' wins",
-    "this could’ve been avoided at multiple points",
-    "this is why parents check screen time",
-    "this is the long-term effect of 'why not'",
-    "unemployed but somehow still busy",
-    "bro made this their 9–5",
-    "this is why 'just one more' is dangerous",
-    "social life: 0 — pokédex entries: many",
-    "do not ask how many hours this took. just clap",
-    "this person needs sunlight immediately",
-]
-    
+        "unemployed final boss • needs a job",
+        "professionally avoiding responsibilities since day 1",
+        "catching pokémon instead of catching flights",
+        "this is a cry for help dressed as an achievement",
+        "peak productivity: touching grass is not included",
+        "a legend in the streets, a menace in the tall grass",
+        "therapy? no. pokéballs? yes.",
+        "social life: 0 — pokédex entries: many",
+        "sponsored by sleep deprivation and spite",
+        "do not ask how many hours this took. just clap.",
+        "the grind never stops. neither does the sadness.",
+        "mom said i could be anything, so i became a problem",
+        "certified internet creature of culture",
+        "living proof that dedication and delusion look the same",
+        "no life? no problem. i have pokémon.",
+        "built different. also possibly broken.",
+        "the real treasure was the caught pokémon along the way",
+        "this person needs sunlight immediately",
+        "somewhere out there, a wild pokémon is trembling",
+        "insert motivational quote here • we're all tired",
+    ]
+
     def create_milestone_embed(self, catch_data: dict, original_message: discord.Message = None) -> discord.Embed:
         """Create embed for a milestone catch (1k / 10k / 100k) — distinct flashy style"""
         import random
@@ -275,11 +278,16 @@ class StarboardCatch(commands.Cog):
             banner = "🌟 ELITE MILESTONE 🌟"
             color = 0x00BFFF   # Deep sky blue
             tier_label = "10,000 Caught — Seriously Impressive"
-        else:
+        elif count >= 1_000:
             medal = "🥈"
             banner = "🎉 MILESTONE UNLOCKED 🎉"
             color = 0x9B59B6   # Purple
             tier_label = "1,000 Caught — The Journey Begins"
+        else:
+            medal = "🌱"
+            banner = "✅ FIRST STEPS ✅"
+            color = 0x2ECC71   # Green
+            tier_label = "100 Caught — Something Has Begun"
 
         formatted_count = f"{count:,}"
 
