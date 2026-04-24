@@ -576,6 +576,7 @@ class Help(commands.Cog):
                     f"`{prefix}starboard-highiv #channel` - High IV (≥90%)\n"
                     f"`{prefix}starboard-lowiv #channel` - Low IV (≤10%)\n"
                     f"`{prefix}starboard-missingno #channel` - MissingNo catches\n"
+                    f"`{prefix}starboard-milestone #channel` - Milestone catches (1000th etc)\n"
                     f"Use `none` instead of #channel to remove"
                 ),
                 inline=False
@@ -823,7 +824,7 @@ class Help(commands.Cog):
                 value=(
                     f"`{prefix}starboard-settings` • `{prefix}starboard-all`\n"
                     f"`{prefix}starboard-catch/egg/unbox`\n"
-                    f"`{prefix}starboard-shiny/gigantamax/highiv/lowiv/missingno`"
+                    f"`{prefix}starboard-shiny/gigantamax/highiv/lowiv/milestone/missingno`"
                 ),
                 inline=False
             )
