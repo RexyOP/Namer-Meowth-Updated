@@ -89,10 +89,13 @@ class ShinyHunt(commands.Cog):
         pokemon_to_hunt = []
         using_all = False
         
-        # Check if using "all" keyword
-        if args_lower.endswith(" all"):
+        # Check if using "all" keyword (support both "furfrou all" and "all furfrou")
+        if args_lower.endswith(" all") or args_lower.startswith("all "):
             using_all = True
-            base_name = args[:-4].strip()
+            if args_lower.startswith("all "):
+                base_name = args[4:].strip()
+            else:
+                base_name = args[:-4].strip()
             variants = get_pokemon_with_variants(base_name, self.pokemon_data)
             
             if not variants:
