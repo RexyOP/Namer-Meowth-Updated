@@ -223,25 +223,54 @@ def _build_list_pages(
 
 
 class IncenseListView(discord.ui.View):
-    """Pagination view for inc list — only the invoking user can flip pages."""
+    """
+    Pagination view for inc list.
+    Holds both paused and active page sets.
+    Toggle button switches between them; Prev/Next flips pages within the current set.
+    Only the invoking user can interact.
+    """
 
-    def __init__(self, pages: list[discord.Embed], total: int, showing_paused: bool, author_id: int):
+    def __init__(
+        self,
+        paused_pages: list[discord.Embed],
+        active_pages: list[discord.Embed],
+        paused_total: int,
+        active_total: int,
+        author_id: int,
+    ):
         super().__init__(timeout=120)
-        self.pages = pages
-        self.total = total
-        self.showing_paused = showing_paused
+        self.paused_pages = paused_pages
+        self.active_pages = active_pages
+        self.paused_total = paused_total
+        self.active_total = active_total
         self.author_id = author_id
+        self.showing_paused = True
         self.current = 0
         self._update_buttons()
 
+    @property
+    def current_pages(self) -> list[discord.Embed]:
+        return self.paused_pages if self.showing_paused else self.active_pages
+
     def _update_buttons(self):
+        pages = self.current_pages
         self.prev_btn.disabled = self.current == 0
-        self.next_btn.disabled = self.current >= len(self.pages) - 1
+        self.next_btn.disabled = self.current >= len(pages) - 1
+        # Toggle button label reflects what clicking it will switch TO
+        if self.showing_paused:
+            self.toggle_btn.label = "Show Active ▶️"
+            self.toggle_btn.style = discord.ButtonStyle.success
+        else:
+            self.toggle_btn.label = "Show Paused ⏸️"
+            self.toggle_btn.style = discord.ButtonStyle.danger
+        # Disable toggle if the other side has no pages
+        other_pages = self.active_pages if self.showing_paused else self.paused_pages
+        self.toggle_btn.disabled = len(other_pages) == 0
 
     async def _check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
             await interaction.response.send_message(
-                "Only the person who ran this command can flip pages.", ephemeral=True
+                "Only the person who ran this command can interact with this.", ephemeral=True
             )
             return False
         return True
@@ -252,7 +281,7 @@ class IncenseListView(discord.ui.View):
             return
         self.current -= 1
         self._update_buttons()
-        await interaction.response.edit_message(embed=self.pages[self.current], view=self)
+        await interaction.response.edit_message(embed=self.current_pages[self.current], view=self)
 
     @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
     async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -260,7 +289,21 @@ class IncenseListView(discord.ui.View):
             return
         self.current += 1
         self._update_buttons()
-        await interaction.response.edit_message(embed=self.pages[self.current], view=self)
+        await interaction.response.edit_message(embed=self.current_pages[self.current], view=self)
+
+    @discord.ui.button(label="Show Active ▶️", style=discord.ButtonStyle.success)
+    async def toggle_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check(interaction):
+            return
+        self.showing_paused = not self.showing_paused
+        self.current = 0
+        self._update_buttons()
+        pages = self.current_pages
+        if not pages:
+            # Shouldn't happen (button is disabled when empty) but guard anyway
+            await interaction.response.send_message("No channels to show.", ephemeral=True)
+            return
+        await interaction.response.edit_message(embed=pages[self.current], view=self)
 
     async def on_timeout(self):
         for item in self.children:
@@ -569,17 +612,11 @@ class Incense(commands.Cog):
 
     # ── /inc list ────────────────────────────
 
-    @inc_group.command(name="list", description="Show paused or active channels across monitored categories")
-    @app_commands.describe(status="Filter: paused or resumed channels")
-    @app_commands.choices(status=[
-        app_commands.Choice(name="paused",  value="paused"),
-        app_commands.Choice(name="resumed", value="resumed"),
-    ])
-    async def inc_list(self, interaction: discord.Interaction, status: str = "paused"):
+    @inc_group.command(name="list", description="Show paused and active channels across monitored categories")
+    async def inc_list(self, interaction: discord.Interaction):
         await interaction.response.defer()
         cats = await _get_categories(self.db, interaction.guild_id)
         paused_ids = set(await _get_paused_channels(self.db, interaction.guild_id))
-        showing_paused = (status == "paused")
 
         if not cats:
             return await interaction.followup.send(
@@ -589,19 +626,29 @@ class Incense(commands.Cog):
                 )
             )
 
-        pages, total = _build_list_pages(interaction.guild, cats, paused_ids, showing_paused)
+        paused_pages, paused_total = _build_list_pages(interaction.guild, cats, paused_ids, True)
+        active_pages, active_total = _build_list_pages(interaction.guild, cats, paused_ids, False)
 
-        if total == 0:
+        if paused_total == 0 and active_total == 0:
             return await interaction.followup.send(
                 embed=discord.Embed(
-                    title=f"{'⏸️ Paused' if showing_paused else '▶️ Active'} Channels",
-                    description=f"No {'paused' if showing_paused else 'active'} channels found in monitored categories.",
+                    description="No channels found in monitored categories.",
                     color=config.EMBED_COLOR
                 )
             )
 
-        view = IncenseListView(pages, total, showing_paused, author_id=interaction.user.id)
-        await interaction.followup.send(embed=pages[0], view=view)
+        view = IncenseListView(
+            paused_pages=paused_pages,
+            active_pages=active_pages,
+            paused_total=paused_total,
+            active_total=active_total,
+            author_id=interaction.user.id,
+        )
+        if paused_total == 0:
+            view.showing_paused = False
+            view._update_buttons()
+
+        await interaction.followup.send(embed=view.current_pages[0], view=view)
 
     # ── /inc help ────────────────────────────
 
@@ -964,45 +1011,40 @@ class Incense(commands.Cog):
     # ── list ─────────────────────────────────
 
     @inc_prefix.command(name="list")
-    async def inc_prefix_list(self, ctx: commands.Context, status: str = "paused"):
-        """
-        Show paused or active channels.
-        Usage:  inc list paused
-                inc list resumed
-        """
-        status = status.lower()
-        p = config.BOT_PREFIX[0]
-        if status not in ("paused", "resumed"):
-            embed = discord.Embed(
-                description=f"Usage: `{p}inc list paused` or `{p}inc list resumed`",
-                color=config.EMBED_COLOR
-            )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
-
+    async def inc_prefix_list(self, ctx: commands.Context):
+        """Show paused and active channels across monitored categories."""
         cats = await _get_categories(self.db, ctx.guild.id)
         paused_ids = set(await _get_paused_channels(self.db, ctx.guild.id))
-        showing_paused = (status == "paused")
 
         if not cats:
             embed = discord.Embed(
-                title=f"{'⏸️ Paused' if showing_paused else '▶️ Active'} Channels",
                 description="No categories are being monitored.",
                 color=config.EMBED_COLOR
             )
             return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
 
-        pages, total = _build_list_pages(ctx.guild, cats, paused_ids, showing_paused)
+        paused_pages, paused_total = _build_list_pages(ctx.guild, cats, paused_ids, True)
+        active_pages, active_total = _build_list_pages(ctx.guild, cats, paused_ids, False)
 
-        if total == 0:
+        if paused_total == 0 and active_total == 0:
             embed = discord.Embed(
-                title=f"{'⏸️ Paused' if showing_paused else '▶️ Active'} Channels",
-                description=f"No {'paused' if showing_paused else 'active'} channels found in monitored categories.",
+                description="No channels found in monitored categories.",
                 color=config.EMBED_COLOR
             )
             return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
 
-        view = IncenseListView(pages, total, showing_paused, author_id=ctx.author.id)
-        await ctx.send(embed=pages[0], view=view, reference=ctx.message, mention_author=False)
+        view = IncenseListView(
+            paused_pages=paused_pages,
+            active_pages=active_pages,
+            paused_total=paused_total,
+            active_total=active_total,
+            author_id=ctx.author.id,
+        )
+        if paused_total == 0:
+            view.showing_paused = False
+            view._update_buttons()
+
+        await ctx.send(embed=view.current_pages[0], view=view, reference=ctx.message, mention_author=False)
 
     # ── help ─────────────────────────────────
 
