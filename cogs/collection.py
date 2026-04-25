@@ -210,7 +210,7 @@ class Collection(commands.Cog):
         if has_forms_hints:
             hints = ", ".join(has_forms_hints)
             hint_cmds = ", ".join([f"{n} all" for n in has_forms_hints])
-            forms_text = f"\n\n> -# **{hints}** {'has' if len(has_forms_hints) == 1 else 'have'} other forms! To add all forms use: {hint_cmds}"
+            forms_text = f"\n\n> -# **{hints}** {'has' if len(has_forms_hints) == 1 else 'have'} other forms! To add all forms use: `{hint_cmds}`"
             if len(response) + len(forms_text) < 1900:
                 response += forms_text
             else:
