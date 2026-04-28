@@ -1,1115 +1,1066 @@
+"""Help commands"""
 import discord
 from discord.ext import commands
-from discord import app_commands
-import re
-import shlex
-import config
+from config import EMBED_COLOR, BOT_PREFIX
 
-POKETWO_ID = 716390085896962058
-INCENSE_PATTERN = re.compile(
-    r"You purchased an Incense for \d+ shards!",
-    re.IGNORECASE
-)
+class Help(commands.Cog):
+    """Help and information commands"""
 
-# ─────────────────────────────────────────────
-#  DB helpers  (use bot.db passed from the cog)
-# ─────────────────────────────────────────────
-
-def _guild_key(guild_id: int) -> str:
-    return f"incense_guild_{guild_id}"
-
-async def _get_guild_doc(db, guild_id: int) -> dict:
-    doc = await db.db.user_data.find_one({"user_id": _guild_key(guild_id)})
-    return doc or {}
-
-async def _save_guild_doc(db, guild_id: int, data: dict):
-    await db.db.user_data.update_one(
-        {"user_id": _guild_key(guild_id)},
-        {"$set": data},
-        upsert=True
-    )
-
-async def _get_enabled(db, guild_id: int) -> bool:
-    doc = await _get_guild_doc(db, guild_id)
-    return doc.get("incense_enabled", True)
-
-async def _set_enabled(db, guild_id: int, value: bool):
-    await _save_guild_doc(db, guild_id, {"incense_enabled": value})
-
-async def _get_categories(db, guild_id: int) -> list[int]:
-    doc = await _get_guild_doc(db, guild_id)
-    return doc.get("incense_categories", [])
-
-async def _set_categories(db, guild_id: int, cats: list[int]):
-    await _save_guild_doc(db, guild_id, {"incense_categories": cats})
-
-async def _get_paused_channels(db, guild_id: int) -> list[int]:
-    doc = await _get_guild_doc(db, guild_id)
-    return doc.get("incense_paused_channels", [])
-
-async def _set_paused_channels(db, guild_id: int, channels: list[int]):
-    await _save_guild_doc(db, guild_id, {"incense_paused_channels": channels})
-
-
-# ─────────────────────────────────────────────
-#  Permission helpers
-# ─────────────────────────────────────────────
-
-async def _get_poketwo(guild: discord.Guild) -> discord.Member | None:
-    """Return Poketwo as a Member, fetching if not cached."""
-    member = guild.get_member(POKETWO_ID)
-    if member is None:
-        try:
-            member = await guild.fetch_member(POKETWO_ID)
-        except (discord.NotFound, discord.HTTPException):
-            member = None
-    return member
-
-async def _deny_poketwo_in_channel(channel: discord.TextChannel):
-    """Deny Poketwo send_messages + view_channel in a single channel."""
-    poketwo = await _get_poketwo(channel.guild)
-    if poketwo is None:
-        return
-    overwrite = channel.overwrites_for(poketwo)
-    overwrite.send_messages = False
-    overwrite.view_channel = False
-    await channel.set_permissions(poketwo, overwrite=overwrite)
-
-async def _deny_poketwo_in_category(category: discord.CategoryChannel):
-    """
-    Deny Poketwo send_messages + view_channel at the category level,
-    then sync all channels in that category to inherit.
-    Returns (synced_count, already_synced_count).
-    """
-    poketwo = await _get_poketwo(category.guild)
-    if poketwo is None:
-        return 0, 0
-
-    overwrite = category.overwrites_for(poketwo)
-    overwrite.send_messages = False
-    overwrite.view_channel = False
-    await category.set_permissions(poketwo, overwrite=overwrite)
-
-    synced = 0
-    already_synced = 0
-    for ch in category.text_channels:
-        if ch.permissions_synced:
-            already_synced += 1
-        else:
-            await ch.edit(sync_permissions=True)
-            synced += 1
-
-    return synced, already_synced
-
-async def _restore_poketwo_in_category(category: discord.CategoryChannel):
-    """
-    Remove Poketwo overwrite from the category (restore to neutral),
-    then sync all channels in that category.
-    Returns (synced_count, already_synced_count).
-    """
-    poketwo = await _get_poketwo(category.guild)
-    if poketwo is None:
-        return 0, 0
-
-    overwrite = category.overwrites_for(poketwo)
-    overwrite.send_messages = None
-    overwrite.view_channel = None
-    if overwrite.is_empty():
-        await category.set_permissions(poketwo, overwrite=None)
-    else:
-        await category.set_permissions(poketwo, overwrite=overwrite)
-
-    synced = 0
-    already_synced = 0
-    for ch in category.text_channels:
-        if ch.permissions_synced:
-            already_synced += 1
-        else:
-            await ch.edit(sync_permissions=True)
-            synced += 1
-
-    return synced, already_synced
-
-
-# ─────────────────────────────────────────────
-#  Utility: parse multi-name strings
-# ─────────────────────────────────────────────
-
-def _parse_category_names(raw: str) -> list[str]:
-    try:
-        return shlex.split(raw)
-    except ValueError:
-        return raw.split()
-
-def _resolve_category(guild: discord.Guild, name: str):
-    name = name.strip()
-    if name.isdigit():
-        ch = guild.get_channel(int(name))
-        if isinstance(ch, discord.CategoryChannel):
-            return ch
-    return discord.utils.find(
-        lambda c: c.name.lower() == name.lower(),
-        guild.categories
-    )
-
-
-# ─────────────────────────────────────────────
-#  List pagination — one category per page,
-#  up to 50 channels shown, no "(cont.)" labels
-# ─────────────────────────────────────────────
-
-MAX_CHANNELS_PER_PAGE = 50
-
-def _build_list_pages(
-    guild: discord.Guild,
-    cats: list[int],
-    paused_ids: set[int],
-    showing_paused: bool,
-) -> tuple[list[discord.Embed], int]:
-    """
-    One embed per category. Each embed shows up to MAX_CHANNELS_PER_PAGE
-    channel mentions in its description. No field splitting, no "(cont.)".
-    Returns (pages, total_channel_count).
-    """
-    icon = "⏸️" if showing_paused else "▶️"
-    label = "Paused" if showing_paused else "Active"
-
-    pages: list[discord.Embed] = []
-    total = 0
-
-    for cat_id in cats:
-        cat_obj = guild.get_channel(cat_id)
-        if not isinstance(cat_obj, discord.CategoryChannel):
-            continue
-
-        # Collect matching channels
-        matching = []
-        for ch in cat_obj.text_channels:
-            is_paused = ch.id in paused_ids
-            if showing_paused and is_paused:
-                matching.append(ch.mention)
-            elif not showing_paused and not is_paused:
-                matching.append(ch.mention)
-
-        if not matching:
-            continue
-
-        total += len(matching)
-
-        # Cap display at MAX_CHANNELS_PER_PAGE
-        displayed = matching[:MAX_CHANNELS_PER_PAGE]
-        hidden = len(matching) - len(displayed)
-
-        lines = [f"{icon} {m}" for m in displayed]
-        if hidden:
-            lines.append(f"*…and {hidden} more channel{'s' if hidden != 1 else ''}*")
-
-        embed = discord.Embed(
-            title=f"{icon} {label} Channels — {cat_obj.name}",
-            description="\n".join(lines),
-            color=config.EMBED_COLOR,
-        )
-        embed.set_footer(
-            text=f"{len(matching)} {label.lower()} channel{'s' if len(matching) != 1 else ''} in this category"
-        )
-        pages.append(embed)
-
-    # Add page numbers now that we know the total
-    for idx, embed in enumerate(pages):
-        existing_footer = embed.footer.text or ""
-        embed.set_footer(text=f"Page {idx + 1}/{len(pages)} · {existing_footer}")
-
-    return pages, total
-
-
-class IncenseListView(discord.ui.View):
-    """
-    Pagination view for inc list.
-    Holds both paused and active page sets.
-    Toggle button switches between them; Prev/Next flips pages within the current set.
-    Only the invoking user can interact.
-    """
-
-    def __init__(
-        self,
-        paused_pages: list[discord.Embed],
-        active_pages: list[discord.Embed],
-        paused_total: int,
-        active_total: int,
-        author_id: int,
-    ):
-        super().__init__(timeout=120)
-        self.paused_pages = paused_pages
-        self.active_pages = active_pages
-        self.paused_total = paused_total
-        self.active_total = active_total
-        self.author_id = author_id
-        self.showing_paused = True
-        self.current = 0
-        self._update_buttons()
-
-    @property
-    def current_pages(self) -> list[discord.Embed]:
-        return self.paused_pages if self.showing_paused else self.active_pages
-
-    def _update_buttons(self):
-        pages = self.current_pages
-        self.prev_btn.disabled = self.current == 0
-        self.next_btn.disabled = self.current >= len(pages) - 1
-        # Toggle button label reflects what clicking it will switch TO
-        if self.showing_paused:
-            self.toggle_btn.label = "Show Active ▶️"
-            self.toggle_btn.style = discord.ButtonStyle.success
-        else:
-            self.toggle_btn.label = "Show Paused ⏸️"
-            self.toggle_btn.style = discord.ButtonStyle.danger
-        # Disable toggle if the other side has no pages
-        other_pages = self.active_pages if self.showing_paused else self.paused_pages
-        self.toggle_btn.disabled = len(other_pages) == 0
-
-    async def _check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.author_id:
-            await interaction.response.send_message(
-                "Only the person who ran this command can interact with this.", ephemeral=True
-            )
-            return False
-        return True
-
-    @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary)
-    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self._check(interaction):
-            return
-        self.current -= 1
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self.current_pages[self.current], view=self)
-
-    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
-    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self._check(interaction):
-            return
-        self.current += 1
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self.current_pages[self.current], view=self)
-
-    @discord.ui.button(label="Show Active ▶️", style=discord.ButtonStyle.success)
-    async def toggle_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self._check(interaction):
-            return
-        self.showing_paused = not self.showing_paused
-        self.current = 0
-        self._update_buttons()
-        pages = self.current_pages
-        if not pages:
-            # Shouldn't happen (button is disabled when empty) but guard anyway
-            await interaction.response.send_message("No channels to show.", ephemeral=True)
-            return
-        await interaction.response.edit_message(embed=pages[self.current], view=self)
-
-    async def on_timeout(self):
-        for item in self.children:
-            item.disabled = True
-
-
-# ─────────────────────────────────────────────
-#  The Cog
-# ─────────────────────────────────────────────
-
-class Incense(commands.Cog):
-    """
-    Poketwo incense helper – restricts Poketwo the moment someone
-    purchases an Incense in a monitored category channel.
-    """
-
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot):
         self.bot = bot
 
-    @property
-    def db(self):
-        return self.bot.db
+    @commands.command(name="help", aliases=["h"])
+    async def help_command(self, ctx, category: str = None):
+        """Show help information
 
-    # ── internal helpers ─────────────────────
+        Categories: collection, category, hunt, settings, prediction, starboard, helpful, incense, owner, all
+        """
+        prefix = BOT_PREFIX[0]  # Use first prefix for examples
 
-    async def _channel_in_monitored_category(self, channel: discord.TextChannel) -> bool:
-        cats = await _get_categories(self.db, channel.guild.id)
-        return channel.category_id in cats
+        # Check if user is owner
+        is_owner = await self.bot.is_owner(ctx.author)
 
-    async def _is_paused(self, channel: discord.TextChannel) -> bool:
-        paused = await _get_paused_channels(self.db, channel.guild.id)
-        return channel.id in paused
+        if not category:
+            # Main help embed
+            embed = discord.Embed(
+                title="📚 Poketwo Helper Bot - Help",
+                description=f"Use `{prefix}help <category>` for detailed information about a category\nUse `{prefix}help all` to see all commands at once",
+                color=EMBED_COLOR
+            )
 
-    async def _pause_channel(self, channel: discord.TextChannel):
-        """Pause a single channel (used when incense is detected in that channel)."""
-        paused = await _get_paused_channels(self.db, channel.guild.id)
-        if channel.id not in paused:
-            paused.append(channel.id)
-            await _set_paused_channels(self.db, channel.guild.id, paused)
-        await _deny_poketwo_in_channel(channel)
+            embed.add_field(
+                name="📦 Collection",
+                value=f"`{prefix}help collection` - Manage your Pokemon collection",
+                inline=False
+            )
 
-    async def _resume_channel(self, channel: discord.TextChannel):
-        """Resume a single channel by syncing it to its category."""
-        paused = await _get_paused_channels(self.db, channel.guild.id)
-        if channel.id in paused:
-            paused.remove(channel.id)
-            await _set_paused_channels(self.db, channel.guild.id, paused)
-        await channel.edit(sync_permissions=True)
+            embed.add_field(
+                name="🗂️ Category",
+                value=f"`{prefix}help category` - Bulk collection management with categories",
+                inline=False
+            )
 
-    def _bot_mention(self) -> str:
-        return self.bot.user.mention if self.bot.user else "@MiniMeowth"
+            embed.add_field(
+                name="✨ Shiny Hunt",
+                value=f"`{prefix}help hunt` - Set up shiny hunting",
+                inline=False
+            )
 
-    # ── listener ─────────────────────────────
+            embed.add_field(
+                name="🔷 Type & Region Pings",
+                value=f"`{prefix}help pings` - Get pinged by Pokemon type or region",
+                inline=False
+            )
 
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        if not message.guild:
-            return
-        if message.author.id != POKETWO_ID:
-            return
-        if not isinstance(message.channel, discord.TextChannel):
-            return
-        if not await _get_enabled(self.db, message.guild.id):
-            return
-        if not await self._channel_in_monitored_category(message.channel):
-            return
-        if await self._is_paused(message.channel):
-            return
+            embed.add_field(
+                name="⚙️ Settings",
+                value=f"`{prefix}help settings` - Configure bot settings",
+                inline=False
+            )
 
-        content = message.content or ""
-        if INCENSE_PATTERN.search(content):
-            await self._pause_channel(message.channel)
-            try:
-                await message.channel.send(
-                    f"Incense purchased! Poketwo has been restricted in this channel. "
-                    f"Use `{self._bot_mention()} incense help` to learn about the commands."
+            embed.add_field(
+                name="🔮 Prediction",
+                value=f"`{prefix}help prediction` - Manual Pokemon prediction",
+                inline=False
+            )
+
+            embed.add_field(
+                name="⭐ Starboard",
+                value=f"`{prefix}help starboard` - Configure starboard channels",
+                inline=False
+            )
+
+            embed.add_field(
+                name="🔍 Helpful Commands",
+                value=f"`{prefix}help helpful` - Spawn rates, shiny rates & hint solver",
+                inline=False
+            )
+
+            embed.add_field(
+                name="🔥 Incense",
+                value=f"`{prefix}help incense` - Manage Poketwo incense sessions",
+                inline=False
+            )
+
+            if is_owner:
+                embed.add_field(
+                    name="👑 Owner",
+                    value=f"`{prefix}help owner` - Bot owner commands",
+                    inline=False
                 )
-            except discord.Forbidden:
-                pass
 
-    # ══════════════════════════════════════════
-    #  Slash group: /inc
-    # ══════════════════════════════════════════
-
-    inc_group = app_commands.Group(name="inc", description="Incense management commands")
-
-    # ── /inc toggle ──────────────────────────
-
-    @inc_group.command(name="toggle", description="Enable or disable the incense watcher for this server")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def inc_toggle(self, interaction: discord.Interaction):
-        current = await _get_enabled(self.db, interaction.guild_id)
-        new_val = not current
-        await _set_enabled(self.db, interaction.guild_id, new_val)
-        embed = discord.Embed(
-            title="Incense Watcher",
-            description=f"The incense watcher is now {'**enabled** ✅' if new_val else '**disabled** 🔴'}.",
-            color=config.EMBED_COLOR
-        )
-        await interaction.response.send_message(embed=embed)
-
-    # ── /inc cat ─────────────────────────────
-
-    cat_group = app_commands.Group(
-        name="cat",
-        description="Manage monitored categories",
-        parent=inc_group
-    )
-
-    @cat_group.command(name="add", description="Add a category to monitor (one at a time via slash; use prefix for multiple)")
-    @app_commands.describe(category="The category to monitor")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def inc_cat_add(self, interaction: discord.Interaction, category: discord.CategoryChannel):
-        cats = await _get_categories(self.db, interaction.guild_id)
-        if category.id in cats:
-            return await interaction.response.send_message(
-                embed=discord.Embed(
-                    description=f"⚠️ **{category.name}** is already being monitored.",
-                    color=config.EMBED_COLOR
-                ), ephemeral=True
-            )
-        cats.append(category.id)
-        await _set_categories(self.db, interaction.guild_id, cats)
-        ch_count = len(category.text_channels)
-        embed = discord.Embed(
-            description=f"✅ Added category **{category.name}** ({ch_count} channel{'s' if ch_count != 1 else ''})",
-            color=config.EMBED_COLOR
-        )
-        await interaction.response.send_message(embed=embed)
-
-    @cat_group.command(name="remove", description="Stop monitoring a category")
-    @app_commands.describe(category="The category to remove")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def inc_cat_remove(self, interaction: discord.Interaction, category: discord.CategoryChannel):
-        cats = await _get_categories(self.db, interaction.guild_id)
-        if category.id not in cats:
-            return await interaction.response.send_message(
-                embed=discord.Embed(
-                    description=f"⚠️ **{category.name}** is not in the monitored list.",
-                    color=config.EMBED_COLOR
-                ), ephemeral=True
-            )
-        cats.remove(category.id)
-        await _set_categories(self.db, interaction.guild_id, cats)
-        embed = discord.Embed(
-            description=f"🗑️ Removed **{category.name}** from monitoring.",
-            color=config.EMBED_COLOR
-        )
-        await interaction.response.send_message(embed=embed)
-
-    @cat_group.command(name="list", description="List all monitored categories with channel counts")
-    async def inc_cat_list(self, interaction: discord.Interaction):
-        cats = await _get_categories(self.db, interaction.guild_id)
-        embed = discord.Embed(title="📋 Monitored Categories", color=config.EMBED_COLOR)
-        if not cats:
-            embed.description = "No categories are being monitored.\nAdd one with `/inc cat add` or `inc cat add <n>`."
-        else:
-            lines = []
-            total_ch = 0
-            for cid in cats:
-                cat_obj = interaction.guild.get_channel(cid)
-                if cat_obj:
-                    ch_count = len(cat_obj.text_channels)
-                    total_ch += ch_count
-                    lines.append(f"• **{cat_obj.name}** — {ch_count} channel{'s' if ch_count != 1 else ''}")
-                else:
-                    lines.append(f"• *(Unknown — ID {cid})*")
-            embed.description = "\n".join(lines)
-            embed.set_footer(
-                text=f"{len(cats)} categor{'ies' if len(cats) != 1 else 'y'} · {total_ch} total channels"
-            )
-        await interaction.response.send_message(embed=embed)
-
-    # ── /inc pause ───────────────────────────
-
-    @inc_group.command(
-        name="pause",
-        description="Pause Poketwo in this channel, or all monitored categories."
-    )
-    @app_commands.describe(scope="Leave empty to pause this channel, or type 'all' to pause every monitored category.")
-    @app_commands.choices(scope=[
-        app_commands.Choice(name="all", value="all"),
-    ])
-    @app_commands.checks.has_permissions(manage_channels=True)
-    async def inc_pause(self, interaction: discord.Interaction, scope: str = None):
-        await interaction.response.defer()
-        cats = await _get_categories(self.db, interaction.guild_id)
-        bot_mention = self._bot_mention()
-
-        if scope == "all":
-            placeholder = await interaction.followup.send(
-                embed=discord.Embed(
-                    description="⏳ Pausing Incenses. This may take some seconds.",
-                    color=config.EMBED_COLOR
-                )
+            embed.add_field(
+                name="ℹ️ About",
+                value=f"`{prefix}about` - Bot information and stats",
+                inline=False
             )
 
-            total_synced = 0
-            total_already = 0
-            for cat_id in cats:
-                cat_obj = interaction.guild.get_channel(cat_id)
-                if not isinstance(cat_obj, discord.CategoryChannel):
-                    continue
-                synced, already = await _deny_poketwo_in_category(cat_obj)
-                total_synced += synced
-                total_already += already
+            embed.add_field(
+                name="🏓 Ping",
+                value=f"`{prefix}ping` - Check bot latency",
+                inline=False
+            )
 
-            paused = []
-            for cat_id in cats:
-                cat_obj = interaction.guild.get_channel(cat_id)
-                if not isinstance(cat_obj, discord.CategoryChannel):
-                    continue
-                for ch in cat_obj.text_channels:
-                    paused.append(ch.id)
-            await _set_paused_channels(self.db, interaction.guild_id, paused)
+            embed.set_footer(text=f"Bot Prefix: {', '.join(BOT_PREFIX)}")
+
+            await ctx.reply(embed=embed, mention_author=False)
+            return
+
+        category = category.lower()
+
+        # Collection category
+        if category in ["collection", "cl", "collect"]:
+            embed = discord.Embed(
+                title="📦 Collection Commands",
+                description="Manage your Pokemon collection for this server. Get pinged when Pokemon you collect spawn!",
+                color=EMBED_COLOR
+            )
+
+            embed.add_field(
+                name=f"`{prefix}cl add <pokemon>`",
+                value=(
+                    "Add Pokemon to your collection\n"
+                    f"**Aliases:** `{prefix}collection add`\n"
+                    f"**Examples:**\n"
+                    f"• `{prefix}cl add Pikachu`\n"
+                    f"• `{prefix}cl add Pikachu, Charizard, Mewtwo`\n"
+                    f"• `{prefix}cl add Furfrou all` (adds all Furfrou variants)"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}cl remove <pokemon>`",
+                value=(
+                    "Remove Pokemon from your collection\n"
+                    f"**Aliases:** `{prefix}collection remove`\n"
+                    f"**Example:** `{prefix}cl remove Pikachu`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}cl list`",
+                value=(
+                    "View your collection in a paginated embed with buttons\n"
+                    f"**Aliases:** `{prefix}collection list`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}cl raw`",
+                value=(
+                    "View your collection as comma-separated text (sends as .txt file if large)\n"
+                    f"**Aliases:** `{prefix}collection raw`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}cl clear`",
+                value=(
+                    "⚠️ Clear your entire collection\n"
+                    f"**Aliases:** `{prefix}collection clear`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="💡 How It Works",
+                value=(
+                    "• When a Pokemon you collect spawns, you get pinged!\n"
+                    "• If you add `Furfrou`, you get pinged for all Furfrou variants\n"
+                    "• If you add `Furfrou all`, all variants are explicitly added to your collection"
+                ),
+                inline=False
+            )
+
+        # Category commands
+        elif category in ["category", "cat", "categories"]:
+            embed = discord.Embed(
+                title="🗂️ Category Commands",
+                description="Bulk collection management with categories. Admins create categories, users add them to their collection!",
+                color=EMBED_COLOR
+            )
+
+            embed.add_field(
+                name=f"`{prefix}cat add <categories>`",
+                value=(
+                    "Add Pokemon from categories to your collection\n"
+                    f"**Aliases:** `{prefix}category add`\n"
+                    f"**Examples:**\n"
+                    f"• `{prefix}cat add Rares`\n"
+                    f"• `{prefix}cat add Rares, Regionals, Gigantamax`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}cat remove <categories>`",
+                value=(
+                    "Remove Pokemon from categories from your collection\n"
+                    f"**Aliases:** `{prefix}category remove`\n"
+                    f"**Example:** `{prefix}cat remove Rares`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}cat list`",
+                value=(
+                    "View all server categories with Pokemon counts\n"
+                    f"**Aliases:** `{prefix}category list`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}cat info <name>`",
+                value=(
+                    "View Pokemon in a specific category (paginated)\n"
+                    f"**Aliases:** `{prefix}category info`\n"
+                    f"**Example:** `{prefix}cat info Rares`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="📝 Admin Commands",
+                value=(
+                    f"`{prefix}cat create <name> <pokemon>` - Create a category\n"
+                    f"**Example:** `{prefix}cat create Rares articuno, moltres, zapdos`\n\n"
+                    f"`{prefix}cat edit <name> <pokemon>` - Edit a category (replaces all Pokemon)\n"
+                    f"**Example:** `{prefix}cat edit Rares marshadow, lugia`\n\n"
+                    f"`{prefix}cat delete <name>` - Delete a category\n"
+                    f"**Example:** `{prefix}cat delete Rares`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="💡 How It Works",
+                value=(
+                    "• Admins create categories with Pokemon lists\n"
+                    "• Users can add entire categories to their collection at once\n"
+                    "• Supports 'all' variants (e.g., `arceus all`, `furfrou all`)\n"
+                    "• Category names are case-insensitive and can have spaces"
+                ),
+                inline=False
+            )
+
+        # Shiny Hunt category
+        elif category in ["hunt", "sh", "shiny"]:
+            embed = discord.Embed(
+                title="✨ Shiny Hunt Commands",
+                description="Set up shiny hunting to get pinged when your target Pokemon spawns!",
+                color=EMBED_COLOR
+            )
+
+            embed.add_field(
+                name=f"`{prefix}sh`",
+                value=(
+                    "Check your current shiny hunt\n"
+                    f"**Aliases:** `{prefix}hunt`, `{prefix}shinyhunt`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}sh <pokemon>`",
+                value=(
+                    "Start hunting a Pokemon\n"
+                    f"**Aliases:** `{prefix}hunt <pokemon>`, `{prefix}shinyhunt <pokemon>`\n"
+                    f"**Examples:**\n"
+                    f"• `{prefix}sh Pikachu`\n"
+                    f"• `{prefix}sh Furfrou all` (hunt all Furfrou variants)"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}sh clear`",
+                value=(
+                    "Stop hunting (also accepts `none` or `stop`)\n"
+                    f"**Aliases:** `{prefix}hunt clear`, `{prefix}shinyhunt clear`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="💡 Note",
+                value="You can hunt one Pokemon (or all its variants) at a time per server!",
+                inline=False
+            )
+
+        # Settings category
+        elif category in ["settings", "setting", "config", "afk"]:
+            embed = discord.Embed(
+                title="⚙️ Settings Commands",
+                description="Configure bot settings for your server and personal preferences",
+                color=EMBED_COLOR
+            )
+
+            embed.add_field(
+                name="👤 User Settings",
+                value="",
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}afk`",
+                value=(
+                    "Toggle pings using interactive buttons — **4 toggles available:**\n"
+                    f"**Aliases:** `{prefix}away`\n"
+                    "🟢 **Green** = Pings ON  •  🔴 **Red** = Pings OFF\n"
+                    "• **ShinyHunt** — shiny hunt pings\n"
+                    "• **Collection** — collection pings\n"
+                    "• **TypePings** — type-based pings\n"
+                    "• **RegionPings** — region-based pings\n"
+                    "*AFK status is global across all servers*"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="🛠️ Server Settings",
+                value="",
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}server-settings`",
+                value=(
+                    "View all current server settings\n"
+                    f"**Aliases:** `{prefix}ss`, `{prefix}ssettings`, `{prefix}serversettings`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="📝 Admin Commands",
+                value="",
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}rare-role @role`",
+                value=(
+                    "Set role to ping for rare Pokemon (Legendary/Mythical/Ultra Beast)\n"
+                    f"**Aliases:** `{prefix}rr`, `{prefix}rarerole`\n"
+                    f"**Example:** `{prefix}rare-role @Rare Hunters`\n"
+                    f"Use `{prefix}rare-role none` to clear"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}regional-role @role`",
+                value=(
+                    "Set role to ping for regional Pokemon\n"
+                    f"**Aliases:** `{prefix}regrole`, `{prefix}regional`, `{prefix}regionrole`\n"
+                    f"**Example:** `{prefix}regional-role @Regional`\n"
+                    f"Use `{prefix}regional-role none` to clear"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}only-pings`",
+                value=(
+                    "Toggle only-pings mode (only send predictions when there are pings)\n"
+                    f"**Aliases:** `{prefix}op`, `{prefix}onlypings`\n"
+                    f"**Examples:**\n"
+                    f"• `{prefix}only-pings` - View current status\n"
+                    f"• `{prefix}only-pings true` - Enable\n"
+                    f"• `{prefix}only-pings false` - Disable"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}toggle best_name`",
+                value=(
+                    "Enable/disable the **Shortest Name** line in predictions (off by default)\n"
+                    "When enabled, shows the shortest known name for each Pokemon\n"
+                    f"**Example:** `{prefix}toggle best_name`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}clear-pings [@user | user_id]`",
+                value=(
+                    "Clear all ping data (collections, shiny hunts, type pings, region pings) for this server\n"
+                    f"**Aliases:** `{prefix}clearpings`, `{prefix}clearserverpings`, `{prefix}resetpings`\n"
+                    "• No argument → clears **all users** in the server (prompts for confirmation)\n"
+                    "• With @user or user ID → clears only that user\n"
+                    "⚠️ Requires server owner, administrator, or bot owner"
+                ),
+                inline=False
+            )
+
+        # Type & Region Pings category
+        elif category in ["pings", "ping", "typepings", "regionpings", "tp", "rp"]:
+            embed = discord.Embed(
+                title="🔷 Type & Region Ping Commands",
+                description="Get pinged whenever a Pokemon of a specific type or from a specific region spawns!",
+                color=EMBED_COLOR
+            )
+
+            embed.add_field(
+                name=f"`{prefix}tp`",
+                value=(
+                    "Open the interactive **Type Pings** menu with toggle buttons\n"
+                    f"**Aliases:** `{prefix}typepings`, `{prefix}typeping`\n"
+                    "🟢 Green = enabled  •  ⚫ Grey = disabled\n"
+                    "All 18 types available: Normal, Fire, Water, Electric, Grass, Ice, Fighting, Poison, Ground, Flying, Psychic, Bug, Rock, Ghost, Dragon, Dark, Steel, Fairy"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}tp <types>`",
+                value=(
+                    "Directly toggle one or more types without opening the menu\n"
+                    f"**Examples:**\n"
+                    f"• `{prefix}tp bug` — toggle Bug\n"
+                    f"• `{prefix}tp bug grass fire` — toggle Bug, Grass and Fire at once\n"
+                    "If a type was OFF it turns ON, if it was ON it turns OFF"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}rp`",
+                value=(
+                    "Open the interactive **Region Pings** menu with toggle buttons\n"
+                    f"**Aliases:** `{prefix}regionpings`, `{prefix}regionping`\n"
+                    "🟢 Green = enabled  •  ⚫ Grey = disabled\n"
+                    "All 9 regions available: Kanto, Johto, Hoenn, Sinnoh, Unova, Kalos, Alola, Galar, Paldea"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}rp <regions>`",
+                value=(
+                    "Directly toggle one or more regions without opening the menu\n"
+                    f"**Examples:**\n"
+                    f"• `{prefix}rp kanto` — toggle Kanto\n"
+                    f"• `{prefix}rp kanto johto hoenn` — toggle multiple regions at once"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="🔕 AFK for Type/Region Pings",
+                value=(
+                    f"Use `{prefix}afk` and click the **TypePings** or **RegionPings** button\n"
+                    "to temporarily suppress these pings globally across all servers"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="💡 How It Works",
+                value=(
+                    "• Type and region settings are **per-server** — set them separately in each server\n"
+                    "• When a Pokemon spawns, the bot checks its types/region against your preferences\n"
+                    "• You'll be mentioned in the prediction output under **Type Pings** or **Region Pings**\n"
+                    "• Uses `data/typeandregions.csv` for accurate type/region data"
+                ),
+                inline=False
+            )
+
+        # Prediction category
+        elif category in ["prediction", "predict", "pred"]:
+            embed = discord.Embed(
+                title="🔮 Prediction Commands",
+                description="Manually predict Pokemon from images or view auto-detection info",
+                color=EMBED_COLOR
+            )
+
+            embed.add_field(
+                name=f"`{prefix}predict <image_url>`",
+                value=(
+                    "Predict Pokemon from image URL\n"
+                    f"**Aliases:** `{prefix}pred`, `{prefix}p`\n"
+                    f"**Example:** `{prefix}predict https://...`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}predict` (reply to message)",
+                value=(
+                    "Reply to a message with an image to predict it\n"
+                    f"**Example:** Reply to image with `{prefix}predict`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="🤖 Auto-Detection",
+                value=(
+                    "The bot automatically predicts Poketwo spawns and shows:\n"
+                    "```\n"
+                    "Charizard: 94.21%\n"
+                    "Shortest Name: Glurak       ← if enabled\n"
+                    "Rare Ping: @role\n"
+                    "Regional Pings: @role\n"
+                    "Shiny Hunters: @user\n"
+                    "Collectors: @user\n"
+                    "Type Pings: @user\n"
+                    "Region Pings: @user\n"
+                    "```"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="📊 Dual Model System",
+                value=(
+                    "Bot uses two AI models for accuracy:\n"
+                    "• **Primary model** (224×224) — runs on every spawn\n"
+                    "• **Secondary model** (224×224) — runs in parallel; used when primary confidence < 94%\n"
+                    "• If primary ≥ **94%** → primary result is used\n"
+                    "• If secondary ≥ **90%** → secondary result is used\n"
+                    "• If both are below threshold → primary result is used as fallback\n"
+                    "• Some Pokémon always prefer the secondary model result"
+                ),
+                inline=False
+            )
+
+        # Starboard category
+        elif category in ["starboard", "star", "log"]:
+            embed = discord.Embed(
+                title="⭐ Starboard Commands",
+                description="Configure automatic logging of rare catches, hatches, and unboxes to dedicated channels",
+                color=EMBED_COLOR
+            )
+
+            embed.add_field(
+                name=f"`{prefix}starboard-settings`",
+                value=(
+                    "View current starboard channel configuration"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="📺 Channel Configuration (Admin Only)",
+                value="",
+                inline=False
+            )
+
+            embed.add_field(
+                name="Starboard For All",
+                value=(
+                    f"`{prefix}starboard-all #channel` - All catches, hatches, unboxes\n"
+                    f"Use `none` instead of #channel to remove"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="General Channels",
+                value=(
+                    f"`{prefix}starboard-catch #channel` - All catches\n"
+                    f"`{prefix}starboard-egg #channel` - All egg hatches\n"
+                    f"`{prefix}starboard-unbox #channel` - All box openings\n"
+                    f"Use `none` instead of #channel to remove"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="Specific Criteria Channels",
+                value=(
+                    f"`{prefix}starboard-shiny #channel` - Shiny catches/hatches/unboxes\n"
+                    f"`{prefix}starboard-gigantamax #channel` - Gigantamax catches/hatches/unboxes\n"
+                    f"`{prefix}starboard-highiv #channel` - High IV (≥90%)\n"
+                    f"`{prefix}starboard-lowiv #channel` - Low IV (≤10%)\n"
+                    f"`{prefix}starboard-missingno #channel` - MissingNo catches\n"
+                    f"`{prefix}starboard-milestone #channel` - Milestone catches (1000th etc)\n"
+                    f"Use `none` instead of #channel to remove"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="🔍 Manual Checking (Admin Only)",
+                value=(
+                    f"`{prefix}catchcheck` - Manually check a catch message\n"
+                    f"`{prefix}eggcheck` - Manually check an egg hatch\n"
+                    f"`{prefix}unboxcheck` - Manually check a box opening\n"
+                    "Use by replying to a message or providing message ID"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="📋 What Gets Logged?",
+                value=(
+                    "• **Shiny** catches/hatches/unboxes\n"
+                    "• **Gigantamax** catches/hatches/unboxes\n"
+                    "• **High IV** (≥90%) or **Low IV** (≤10%)\n"
+                    "• **MissingNo** catches\n"
+                    "• **Combinations** (e.g., Shiny + High IV)\n\n"
+                    "Note: A Pokemon meeting multiple criteria will be sent to multiple channels!"
+                ),
+                inline=False
+            )
+
+        # Helpful commands
+        elif category in ["helpful", "util", "utils", "tools"]:
+            embed = discord.Embed(
+                title="🔍 Helpful Commands",
+                description="Useful utility commands for Pokétwo players",
+                color=EMBED_COLOR
+            )
+
+            embed.add_field(
+                name=f"`{prefix}spawnrate <pokemon>` / `{prefix}sr <pokemon>`",
+                value=(
+                    "Show the wild spawn rate for a Pokémon\n"
+                    f"**Aliases:** `{prefix}sr`\n"
+                    f"**Examples:**\n"
+                    f"• `{prefix}sr geodude`\n"
+                    f"• `{prefix}sr Garchomp`\n"
+                    "Also available as a slash command: `/spawnrate`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}shinyrate [chain] [target%]` / `{prefix}shr`",
+                value=(
+                    "Show per-encounter shiny rates at a given chain, or calculate what chain you need to hit a target chance — both with and without Shiny Charm\n"
+                    f"**Aliases:** `{prefix}shr`\n"
+                    f"**Examples:**\n"
+                    f"• `{prefix}shr` — show usage + rates at chain 0\n"
+                    f"• `{prefix}shr 50` — shiny rates at chain 50\n"
+                    f"• `{prefix}shr 89%` — chain needed for 89% per-encounter chance\n"
+                    f"• `{prefix}shr 50 89%` — both at once\n"
+                    "Also available as a slash command: `/shinyrate`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="🔎 Hint Solver (Automatic)",
+                value=(
+                    "When Pokétwo sends a hint message, the bot automatically replies with the matching Pokémon name(s)\n"
+                    "• Supports hints in **all languages** (English, Japanese, etc.)\n"
+                    "• If multiple Pokémon match, all candidates are listed\n"
+                    "• No command needed — just wait for Pokétwo's hint!"
+                ),
+                inline=False
+            )
+
+        # Owner commands
+        elif category in ["owner", "admin", "botowner"]:
+            if not is_owner:
+                await ctx.reply("❌ This category is only available to the bot owner.", mention_author=False)
+                return
 
             embed = discord.Embed(
-                description=(
-                    f"⏸️ Paused all monitored categories.\n\n"
-                    f"🔄 **Synced:** {total_synced} channel{'s' if total_synced != 1 else ''}\n"
-                    f"✅ **Already synced:** {total_already} channel{'s' if total_already != 1 else ''}\n\n"
-                    f"Use `{bot_mention} incense resume all` to resume."
+                title="👑 Owner Commands",
+                description="Bot owner only commands for global settings",
+                color=0xFFD700  # Gold color
+            )
+
+            embed.add_field(
+                name=f"`{prefix}loadmodel`",
+                value=(
+                    "Download (if needed) and load the AI prediction models into RAM\n"
+                    f"**Aliases:** `{prefix}lm`, `{prefix}modelload`, `{prefix}startmodel`\n"
+                    "Run this before starting an incense session\n"
+                    "⚠️ Increases memory usage significantly"
                 ),
-                color=config.EMBED_COLOR
-            )
-            return await placeholder.edit(embed=embed)
-
-        channel = interaction.channel
-        if not await self._channel_in_monitored_category(channel):
-            return await interaction.followup.send(
-                embed=discord.Embed(
-                    description=f"⚠️ {channel.mention} is not inside a monitored category.",
-                    color=config.EMBED_COLOR
-                ), ephemeral=True
-            )
-        already = await self._is_paused(channel)
-        await self._pause_channel(channel)
-        embed = discord.Embed(
-            description=(
-                f"⏸️ {'Already paused — refreshed permissions in' if already else 'Paused incense in'} {channel.mention}.\n"
-                f"Use `{bot_mention} incense resume` to resume."
-            ),
-            color=config.EMBED_COLOR
-        )
-        await interaction.followup.send(embed=embed)
-
-    # ── /inc resume ──────────────────────────
-
-    @inc_group.command(
-        name="resume",
-        description="Resume Poketwo in this channel, or all paused monitored categories."
-    )
-    @app_commands.describe(scope="Leave empty to resume this channel, or type 'all' to resume every paused channel.")
-    @app_commands.choices(scope=[
-        app_commands.Choice(name="all", value="all"),
-    ])
-    @app_commands.checks.has_permissions(manage_channels=True)
-    async def inc_resume(self, interaction: discord.Interaction, scope: str = None):
-        await interaction.response.defer()
-        cats = await _get_categories(self.db, interaction.guild_id)
-
-        if scope == "all":
-            placeholder = await interaction.followup.send(
-                embed=discord.Embed(
-                    description="⏳ Resuming Incenses. This may take some seconds.",
-                    color=config.EMBED_COLOR
-                )
+                inline=False
             )
 
-            total_synced = 0
-            total_already = 0
-            for cat_id in cats:
-                cat_obj = interaction.guild.get_channel(cat_id)
-                if not isinstance(cat_obj, discord.CategoryChannel):
-                    continue
-                synced, already = await _restore_poketwo_in_category(cat_obj)
-                total_synced += synced
-                total_already += already
+            embed.add_field(
+                name=f"`{prefix}unloadmodel`",
+                value=(
+                    "Unload the AI prediction models from RAM\n"
+                    f"**Aliases:** `{prefix}um`, `{prefix}modelunload`, `{prefix}stopmodel`\n"
+                    "Run this after finishing an incense session to free memory"
+                ),
+                inline=False
+            )
 
-            await _set_paused_channels(self.db, interaction.guild_id, [])
+            embed.add_field(
+                name=f"`{prefix}reloadmodel`",
+                value=(
+                    "Force re-download the latest models from GitHub and reload into RAM\n"
+                    f"**Aliases:** `{prefix}rm`, `{prefix}modelreload`, `{prefix}refreshmodel`\n"
+                    "Use this when model files have been updated on GitHub"
+                ),
+                inline=False
+            )
 
+            embed.add_field(
+                name=f"`{prefix}modelstatus`",
+                value=(
+                    "Show current model load state, RAM usage, and prediction stats\n"
+                    f"**Aliases:** `{prefix}ms`, `{prefix}modelinfo`, `{prefix}modelsinfo`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}reloadsr`",
+                value=(
+                    "Force-reload the spawn rate data from the remote CSV\n"
+                    "Useful after the spawn rate sheet has been updated"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}set-low-prediction-channel #channel`",
+                value=(
+                    "Set global channel for low confidence predictions (< 90%)\n"
+                    f"**Aliases:** `{prefix}setlowpred`, `{prefix}lowpredchannel`\n"
+                    f"**Example:** `{prefix}set-low-prediction-channel #low-predictions`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}set-secondary-model-channel #channel`",
+                value=(
+                    "Set global channel for secondary model logs\n"
+                    f"**Aliases:** `{prefix}setsecondary`, `{prefix}secondarychannel`\n"
+                    f"**Example:** `{prefix}set-secondary-model-channel #secondary-logs`\n"
+                    "Logs when the secondary model is used for predictions"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}starboard-set-global-catch #channel`",
+                value=(
+                    "Set global catch starboard channel (across all servers)\n"
+                    f"**Aliases:** `{prefix}sbsetglobalcatch`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}starboard-set-global-egg #channel`",
+                value=(
+                    "Set global egg starboard channel (across all servers)\n"
+                    f"**Aliases:** `{prefix}sbsetglobalegg`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name=f"`{prefix}starboard-set-global-unbox #channel`",
+                value=(
+                    "Set global unbox starboard channel (across all servers)\n"
+                    f"**Aliases:** `{prefix}sbsetglobalunbox`"
+                ),
+                inline=False
+            )
+
+        # Incense commands
+        elif category in ["incense", "inc", "incenses"]:
             embed = discord.Embed(
+                title="🔥 Incense Commands",
                 description=(
-                    f"▶️ Resumed all monitored categories.\n\n"
-                    f"🔄 **Synced:** {total_synced} channel{'s' if total_synced != 1 else ''}\n"
-                    f"✅ **Already synced:** {total_already} channel{'s' if total_already != 1 else ''}"
+                    "Automatically restricts Poketwo the moment an Incense is purchased "
+                    "in a monitored category channel — so your spawns stay exclusive."
                 ),
-                color=config.EMBED_COLOR
+                color=EMBED_COLOR
             )
-            return await placeholder.edit(embed=embed)
 
-        channel = interaction.channel
-        if not await self._channel_in_monitored_category(channel):
-            return await interaction.followup.send(
-                embed=discord.Embed(
-                    description=f"⚠️ {channel.mention} is not inside a monitored category.",
-                    color=config.EMBED_COLOR
-                ), ephemeral=True
+            embed.add_field(
+                name="⚙️ Setup  *(Manage Server)*",
+                value=(
+                    f"`{prefix}inc toggle` — Enable/disable the incense watcher\n"
+                    f"`{prefix}inc cat add SPAWN1 SPAWN2` — Add multiple categories to monitor\n"
+                    f"`{prefix}inc cat add \"Incense 1\" \"Incense 2\"` — Names with spaces use quotes\n"
+                    f"`{prefix}inc cat remove <name>` — Stop monitoring a category\n"
+                    f"`{prefix}inc cat list` — View all monitored categories & channel counts"
+                ),
+                inline=False
             )
-        await self._resume_channel(channel)
-        embed = discord.Embed(
-            description=f"▶️ Resumed {channel.mention} — synced to category permissions.",
-            color=config.EMBED_COLOR
-        )
-        await interaction.followup.send(embed=embed)
 
-    # ── /inc list ────────────────────────────
+            embed.add_field(
+                name="⏸️ Pause  *(Manage Channels)*",
+                value=(
+                    f"`{prefix}inc pause` / `{prefix}inc p` — Pause **this** channel\n"
+                    f"`{prefix}inc pause all` / `{prefix}inc p all` — Pause ALL monitored categories\n"
+                    f"`{prefix}incense pause` also works"
+                ),
+                inline=False
+            )
 
-    @inc_group.command(name="list", description="Show paused and active channels across monitored categories")
-    async def inc_list(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        cats = await _get_categories(self.db, interaction.guild_id)
-        paused_ids = set(await _get_paused_channels(self.db, interaction.guild_id))
+            embed.add_field(
+                name="▶️ Resume  *(Manage Channels)*",
+                value=(
+                    f"`{prefix}inc resume` / `{prefix}inc r` — Resume **this** channel\n"
+                    f"`{prefix}inc resume all` / `{prefix}inc r all` — Resume ALL paused channels\n"
+                    f"`{prefix}incense resume` also works"
+                ),
+                inline=False
+            )
 
-        if not cats:
-            return await interaction.followup.send(
-                embed=discord.Embed(
-                    description="No categories are being monitored. Use `/inc cat add` first.",
-                    color=config.EMBED_COLOR
+            embed.add_field(
+                name="📋 Status",
+                value=f"`{prefix}inc list` — View paused and active channels across monitored categories",
+                inline=False
+            )
+
+            embed.add_field(
+                name="🤖 How It Works",
+                value=(
+                    "• Poketwo sends `You purchased an Incense for X shards!`\n"
+                    "• Bot instantly restricts Poketwo in **that specific channel** only\n"
+                    "• `pause all` / `resume all` operates at the **category level** for speed\n"
+                    f"• Use `{prefix}inc help` for a quick in-chat reference"
+                ),
+                inline=False
+            )
+
+        # All commands
+        elif category in ["all", "commands"]:
+            embed = discord.Embed(
+                title="📚 All Commands",
+                description="Complete list of all bot commands",
+                color=EMBED_COLOR
+            )
+
+            embed.add_field(
+                name="📦 Collection",
+                value=(
+                    f"`{prefix}cl add` • `{prefix}cl remove` • `{prefix}cl list`\n"
+                    f"`{prefix}cl raw` • `{prefix}cl clear`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="🗂️ Category",
+                value=(
+                    f"`{prefix}cat add` • `{prefix}cat remove` • `{prefix}cat list` • `{prefix}cat info`\n"
+                    f"**Admin:** `{prefix}cat create` • `{prefix}cat edit` • `{prefix}cat delete`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="✨ Shiny Hunt",
+                value=f"`{prefix}sh` • `{prefix}sh <pokemon>` • `{prefix}sh clear`",
+                inline=False
+            )
+
+            embed.add_field(
+                name="🔷 Type & Region Pings",
+                value=(
+                    f"`{prefix}tp` • `{prefix}tp <types>`\n"
+                    f"`{prefix}rp` • `{prefix}rp <regions>`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="⚙️ Settings",
+                value=(
+                    f"`{prefix}afk` • `{prefix}server-settings`\n"
+                    f"`{prefix}clear-pings [@user]`\n"
+                    f"**Admin:** `{prefix}rare-role` • `{prefix}regional-role` • `{prefix}only-pings` • `{prefix}toggle best_name`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="🔮 Prediction",
+                value=f"`{prefix}predict`",
+                inline=False
+            )
+
+            embed.add_field(
+                name="⭐ Starboard Settings",
+                value=(
+                    f"`{prefix}starboard-settings` • `{prefix}starboard-all`\n"
+                    f"`{prefix}starboard-catch/egg/unbox`\n"
+                    f"`{prefix}starboard-shiny/gigantamax/highiv/lowiv/milestone/missingno`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="🔍 Helpful",
+                value=(
+                    f"`{prefix}sr <pokemon>` • `{prefix}shr [chain] [target%]`\n"
+                    "Hint solver (automatic — no command needed)"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="🔥 Incense",
+                value=(
+                    f"`{prefix}inc toggle` • `{prefix}inc cat add/remove/list`\n"
+                    f"`{prefix}inc pause [all]` • `{prefix}inc resume [all]` • `{prefix}inc list`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="🔍 Starboard Manual Check",
+                value=f"`{prefix}catchcheck` • `{prefix}eggcheck` • `{prefix}unboxcheck`",
+                inline=False
+            )
+
+            if is_owner:
+                embed.add_field(
+                    name="👑 Owner",
+                    value=(
+                        f"`{prefix}loadmodel` • `{prefix}unloadmodel` • `{prefix}reloadmodel`\n"
+                        f"`{prefix}modelstatus` • `{prefix}reloadsr`\n"
+                        f"`{prefix}set-low-prediction-channel`\n"
+                        f"`{prefix}set-secondary-model-channel`\n"
+                        f"`{prefix}starboard-set-global-catch/egg/unbox`"
+                    ),
+                    inline=False
                 )
+
+            embed.add_field(
+                name="ℹ️ Info",
+                value=f"`{prefix}help` • `{prefix}about` • `{prefix}ping`",
+                inline=False
             )
 
-        paused_pages, paused_total = _build_list_pages(interaction.guild, cats, paused_ids, True)
-        active_pages, active_total = _build_list_pages(interaction.guild, cats, paused_ids, False)
-
-        if paused_total == 0 and active_total == 0:
-            return await interaction.followup.send(
-                embed=discord.Embed(
-                    description="No channels found in monitored categories.",
-                    color=config.EMBED_COLOR
-                )
-            )
-
-        view = IncenseListView(
-            paused_pages=paused_pages,
-            active_pages=active_pages,
-            paused_total=paused_total,
-            active_total=active_total,
-            author_id=interaction.user.id,
-        )
-        if paused_total == 0:
-            view.showing_paused = False
-            view._update_buttons()
-
-        await interaction.followup.send(embed=view.current_pages[0], view=view)
-
-    # ── /inc help ────────────────────────────
-
-    @inc_group.command(name="help", description="Show all incense commands and how to use them")
-    async def inc_help(self, interaction: discord.Interaction):
-        p = config.BOT_PREFIX[0]
-        bot_mention = self._bot_mention()
-        embed = discord.Embed(
-            title="🔥 Incense Help",
-            description=(
-                "Automatically restricts Poketwo the moment someone buys an Incense "
-                "in a monitored category — so your spawns stay exclusive."
-            ),
-            color=config.EMBED_COLOR
-        )
-        embed.add_field(
-            name="⚙️ Setup  *(Manage Server)*",
-            value=(
-                f"`/inc toggle` — Enable / disable the watcher\n"
-                f"`/inc cat add <category>` — Monitor a category\n"
-                f"`{p}inc cat add SPAWN1 SPAWN2` — Add multiple at once\n"
-                f"`{p}inc cat add \"Incense 1\" \"Incense 2\"` — Names with spaces\n"
-                f"`/inc cat remove <category>` — Stop monitoring\n"
-                f"`/inc cat list` — View all categories & channel counts"
-            ),
-            inline=False
-        )
-        embed.add_field(
-            name="⏸️ Pause  *(Manage Channels)*",
-            value=(
-                f"`/inc pause` — Pause **this** channel\n"
-                f"`/inc pause all` — Pause ALL channels in monitored categories\n"
-                f"`{p}inc pause` · `{p}inc p` · `{p}incense pause`\n"
-                f"`{p}inc pause all` · `{p}inc p all`"
-            ),
-            inline=False
-        )
-        embed.add_field(
-            name="▶️ Resume  *(Manage Channels)*",
-            value=(
-                f"`/inc resume` — Resume **this** channel\n"
-                f"`/inc resume all` — Resume ALL paused channels\n"
-                f"`{p}inc resume` · `{p}inc r` · `{p}incense resume`\n"
-                f"`{p}inc resume all` · `{p}inc r all`\n"
-                f"*(also: `{bot_mention} incense resume all`)*"
-            ),
-            inline=False
-        )
-        embed.add_field(
-            name="📋 Status",
-            value=(
-                f"`/inc list paused` — Channels where Poketwo is restricted\n"
-                f"`/inc list resumed` — Channels where Poketwo is active\n"
-                f"`{p}inc list paused`  ·  `{p}inc list resumed`"
-            ),
-            inline=False
-        )
-        embed.add_field(
-            name="🤖 How it works",
-            value=(
-                "Poketwo sends `You purchased an Incense for X shards!`\n"
-                "→ Bot restricts Poketwo in **that specific channel** only.\n"
-                f"→ Use `{bot_mention} incense resume` when your session is over.\n"
-                "→ `pause all` / `resume all` operates at the **category level** for speed."
-            ),
-            inline=False
-        )
-        embed.set_footer(text="Manage Channels required for pause/resume · Manage Server for setup/toggle")
-        await interaction.response.send_message(embed=embed)
-
-    # ══════════════════════════════════════════
-    #  Prefix commands  (p!inc / p!incense)
-    # ══════════════════════════════════════════
-
-    @commands.group(name="inc", aliases=["incense"], invoke_without_command=True)
-    async def inc_prefix(self, ctx: commands.Context):
-        """Incense management. Use `inc help` for details."""
-        await ctx.invoke(self.inc_prefix_help)
-
-    # ── toggle ───────────────────────────────
-
-    @inc_prefix.command(name="toggle")
-    @commands.has_permissions(manage_guild=True)
-    async def inc_prefix_toggle(self, ctx: commands.Context):
-        current = await _get_enabled(self.db, ctx.guild.id)
-        new_val = not current
-        await _set_enabled(self.db, ctx.guild.id, new_val)
-        embed = discord.Embed(
-            title="Incense Watcher",
-            description=f"The incense watcher is now {'**enabled** ✅' if new_val else '**disabled** 🔴'}.",
-            color=config.EMBED_COLOR
-        )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
-
-    # ── cat ──────────────────────────────────
-
-    @inc_prefix.group(name="cat", invoke_without_command=True)
-    async def inc_prefix_cat(self, ctx: commands.Context):
-        p = config.BOT_PREFIX[0]
-        embed = discord.Embed(
-            description=(
-                f"**Usage:**\n"
-                f"`{p}inc cat add SPAWN1 SPAWN2`\n"
-                f"`{p}inc cat add \"Incense 1\" \"Incense 2\"`\n"
-                f"`{p}inc cat remove <n>`\n"
-                f"`{p}inc cat list`"
-            ),
-            color=config.EMBED_COLOR
-        )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
-
-    @inc_prefix_cat.command(name="add")
-    @commands.has_permissions(manage_guild=True)
-    async def inc_prefix_cat_add(self, ctx: commands.Context, *, raw: str):
-        """
-        Add one or more categories to monitor.
-        Usage:  inc cat add SPAWN1 SPAWN2
-                inc cat add "Incense 1" "Incense 2"
-        """
-        names = _parse_category_names(raw)
-        cats = await _get_categories(self.db, ctx.guild.id)
-
-        added_lines = []
-        skipped_lines = []
-
-        for name in names:
-            cat = _resolve_category(ctx.guild, name)
-            if not cat:
-                skipped_lines.append(f"❌ `{name}` — not found")
-                continue
-            if cat.id in cats:
-                skipped_lines.append(f"⚠️ **{cat.name}** — already monitored")
-                continue
-            cats.append(cat.id)
-            ch_count = len(cat.text_channels)
-            added_lines.append(
-                f"✅ **{cat.name}** ({ch_count} channel{'s' if ch_count != 1 else ''})"
-            )
-
-        await _set_categories(self.db, ctx.guild.id, cats)
-
-        parts = []
-        if added_lines:
-            parts.append("**Added:**\n" + "\n".join(added_lines))
-        if skipped_lines:
-            parts.append("**Skipped:**\n" + "\n".join(skipped_lines))
-
-        embed = discord.Embed(
-            description="\n\n".join(parts) if parts else "Nothing to add.",
-            color=config.EMBED_COLOR
-        )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
-
-    @inc_prefix_cat.command(name="remove")
-    @commands.has_permissions(manage_guild=True)
-    async def inc_prefix_cat_remove(self, ctx: commands.Context, *, raw: str):
-        """
-        Remove one or more categories from monitoring.
-        Usage:  inc cat remove SPAWN1
-                inc cat remove "Incense 1" "Incense 2"
-        """
-        names = _parse_category_names(raw)
-        cats = await _get_categories(self.db, ctx.guild.id)
-
-        removed_lines = []
-        skipped_lines = []
-
-        for name in names:
-            cat = _resolve_category(ctx.guild, name)
-            if not cat:
-                skipped_lines.append(f"❌ `{name}` — not found")
-                continue
-            if cat.id not in cats:
-                skipped_lines.append(f"⚠️ **{cat.name}** — not being monitored")
-                continue
-            cats.remove(cat.id)
-            removed_lines.append(f"🗑️ **{cat.name}**")
-
-        await _set_categories(self.db, ctx.guild.id, cats)
-
-        parts = []
-        if removed_lines:
-            parts.append("**Removed:**\n" + "\n".join(removed_lines))
-        if skipped_lines:
-            parts.append("**Skipped:**\n" + "\n".join(skipped_lines))
-
-        embed = discord.Embed(
-            description="\n\n".join(parts) if parts else "Nothing to remove.",
-            color=config.EMBED_COLOR
-        )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
-
-    @inc_prefix_cat.command(name="list")
-    async def inc_prefix_cat_list(self, ctx: commands.Context):
-        cats = await _get_categories(self.db, ctx.guild.id)
-        embed = discord.Embed(title="📋 Monitored Categories", color=config.EMBED_COLOR)
-        if not cats:
-            p = config.BOT_PREFIX[0]
-            embed.description = f"No categories monitored. Add some with `{p}inc cat add <n>`."
         else:
-            lines = []
-            total_ch = 0
-            for cid in cats:
-                cat_obj = ctx.guild.get_channel(cid)
-                if cat_obj:
-                    ch_count = len(cat_obj.text_channels)
-                    total_ch += ch_count
-                    lines.append(f"• **{cat_obj.name}** — {ch_count} channel{'s' if ch_count != 1 else ''}")
-                else:
-                    lines.append(f"• *(Unknown — ID {cid})*")
-            embed.description = "\n".join(lines)
-            embed.set_footer(
-                text=f"{len(cats)} categor{'ies' if len(cats) != 1 else 'y'} · {total_ch} total channels"
-            )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
-
-    # ── pause  (alias: p) ────────────────────
-
-    @inc_prefix.command(name="pause", aliases=["p"])
-    @commands.has_permissions(manage_channels=True)
-    async def inc_prefix_pause(self, ctx: commands.Context, target: str = None):
-        """
-        Pause incense for this channel, or all monitored categories.
-        Usage:  inc pause          ← pauses the current channel
-                inc pause all      ← pauses ALL monitored categories
-                inc p              ← shorthand
-        """
-        cats = await _get_categories(self.db, ctx.guild.id)
-        bot_mention = self._bot_mention()
-        p = config.BOT_PREFIX[0]
-
-        if target and target.lower() == "all":
-            placeholder = await ctx.send(
-                embed=discord.Embed(
-                    description="⏳ Pausing Incenses. This may take some seconds.",
-                    color=config.EMBED_COLOR
-                ),
-                reference=ctx.message,
+            await ctx.reply(
+                f"❌ Unknown category: `{category}`\n"
+                f"Available categories: `collection`, `category`, `hunt`, `pings`, `settings`, `prediction`, `starboard`, `helpful`, `incense`, {'`owner`, ' if is_owner else ''}`all`\n"
+                f"Use `{prefix}help` to see the main help menu.",
                 mention_author=False
             )
+            return
 
-            total_synced = 0
-            total_already = 0
-            for cat_id in cats:
-                cat_obj = ctx.guild.get_channel(cat_id)
-                if not isinstance(cat_obj, discord.CategoryChannel):
-                    continue
-                synced, already = await _deny_poketwo_in_category(cat_obj)
-                total_synced += synced
-                total_already += already
+        embed.set_footer(text=f"Bot Prefix: {', '.join(BOT_PREFIX)}")
+        await ctx.reply(embed=embed, mention_author=False)
 
-            paused = []
-            for cat_id in cats:
-                cat_obj = ctx.guild.get_channel(cat_id)
-                if not isinstance(cat_obj, discord.CategoryChannel):
-                    continue
-                for ch in cat_obj.text_channels:
-                    paused.append(ch.id)
-            await _set_paused_channels(self.db, ctx.guild.id, paused)
+    @commands.command(name="about")
+    async def about_command(self, ctx):
+        """Show bot information and statistics"""
+        prefix = BOT_PREFIX[0]
 
-            embed = discord.Embed(
-                description=(
-                    f"⏸️ Paused all monitored categories.\n\n"
-                    f"🔄 **Synced:** {total_synced} channel{'s' if total_synced != 1 else ''}\n"
-                    f"✅ **Already synced:** {total_already} channel{'s' if total_already != 1 else ''}\n\n"
-                    f"Use `{bot_mention} incense resume all` to resume."
-                ),
-                color=config.EMBED_COLOR
-            )
-            return await placeholder.edit(embed=embed)
-
-        channel = ctx.channel
-
-        if not await self._channel_in_monitored_category(channel):
-            embed = discord.Embed(
-                description=(
-                    f"⚠️ {channel.mention} is not inside a monitored category.\n"
-                    f"Use `{p}inc cat add <category>` to add its category first."
-                ),
-                color=config.EMBED_COLOR
-            )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
-
-        already = await self._is_paused(channel)
-        await self._pause_channel(channel)
         embed = discord.Embed(
-            description=(
-                f"⏸️ {'Already paused — refreshed permissions in' if already else 'Paused incense in'} {channel.mention}.\n"
-                f"Use `{bot_mention} incense resume` to resume."
-            ),
-            color=config.EMBED_COLOR
+            title="ℹ️ About Pokemon Helper Bot",
+            description="A comprehensive Pokemon collection and prediction bot for Poketwo",
+            color=EMBED_COLOR
         )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
 
-    # ── resume  (alias: r) ───────────────────
+        embed.add_field(
+            name="✨ Key Features",
+            value=(
+                "• 📦 **Collection Management** - Track and get pinged for Pokemon you collect\n"
+                "• 🗂️ **Category System** - Bulk add Pokemon to collection\n"
+                "• ✨ **Shiny Hunting** - Get notified when your hunt target spawns\n"
+                "• 🔷 **Type & Region Pings** - Get pinged by Pokemon type or region\n"
+                "• 🔮 **Dual Model Prediction** - Automatically identifies Poketwo spawns\n"
+                "• ⭐ **Starboard Logging** - Log rare catches, hatches, and unboxes\n"
+                "• 🎯 **Smart Pings** - Collectors, hunters, type, region, and role-based pings\n"
+                "• 🔕 **AFK Mode** - Disable pings when you're away\n"
+                "• 🏷️ **Best Name** - Optionally show shortest known name per prediction"
+            ),
+            inline=False
+        )
 
-    @inc_prefix.command(name="resume", aliases=["r"])
-    @commands.has_permissions(manage_channels=True)
-    async def inc_prefix_resume(self, ctx: commands.Context, target: str = None):
-        """
-        Resume incense for this channel, or all channels.
-        Usage:  inc resume          ← resumes the current channel
-                inc resume all      ← resumes ALL monitored categories
-                inc r               ← shorthand
-        """
-        cats = await _get_categories(self.db, ctx.guild.id)
-        p = config.BOT_PREFIX[0]
+        embed.add_field(
+            name="📊 Statistics",
+            value=(
+                f"**Servers:** {len(self.bot.guilds)}\n"
+                f"**Users:** {sum(g.member_count for g in self.bot.guilds)}\n"
+                f"**Commands:** {len(self.bot.commands)}"
+            ),
+            inline=True
+        )
 
-        if target and target.lower() == "all":
-            placeholder = await ctx.send(
-                embed=discord.Embed(
-                    description="⏳ Resuming Incenses. This may take some seconds.",
-                    color=config.EMBED_COLOR
-                ),
-                reference=ctx.message,
-                mention_author=False
-            )
+        embed.add_field(
+            name="⚙️ Technical",
+            value=(
+                f"**Prefix:** {', '.join(BOT_PREFIX)}\n"
+                f"**Library:** discord.py\n"
+                f"**Database:** MongoDB\n"
+                f"**AI Models:** Dual CNN (224×224 primary + 224×224 secondary)"
+            ),
+            inline=True
+        )
 
-            total_synced = 0
-            total_already = 0
-            for cat_id in cats:
-                cat_obj = ctx.guild.get_channel(cat_id)
-                if not isinstance(cat_obj, discord.CategoryChannel):
-                    continue
-                synced, already = await _restore_poketwo_in_category(cat_obj)
-                total_synced += synced
-                total_already += already
+        embed.add_field(
+            name="🚀 Getting Started",
+            value=f"Use `{prefix}help` to see all available commands and features!",
+            inline=False
+        )
 
-            await _set_paused_channels(self.db, ctx.guild.id, [])
+        embed.add_field(
+            name="🔗 Quick Links",
+            value=(
+                f"• `{prefix}help collection` - Set up your collection\n"
+                f"• `{prefix}help category` - Bulk collection management\n"
+                f"• `{prefix}help starboard` - Configure starboard logging\n"
+                f"• `{prefix}afk` - Manage your ping preferences"
+            ),
+            inline=False
+        )
 
-            embed = discord.Embed(
-                description=(
-                    f"▶️ Resumed all monitored categories.\n\n"
-                    f"🔄 **Synced:** {total_synced} channel{'s' if total_synced != 1 else ''}\n"
-                    f"✅ **Already synced:** {total_already} channel{'s' if total_already != 1 else ''}"
-                ),
-                color=config.EMBED_COLOR
-            )
-            return await placeholder.edit(embed=embed)
+        embed.set_footer(text=f"Made with ❤️ for the Poketwo community")
 
-        channel = ctx.channel
+        await ctx.reply(embed=embed, mention_author=False)
 
-        if not await self._channel_in_monitored_category(channel):
-            embed = discord.Embed(
-                description=(
-                    f"⚠️ {channel.mention} is not inside a monitored category.\n"
-                    f"Use `{p}inc cat add <category>` to add its category first."
-                ),
-                color=config.EMBED_COLOR
-            )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+    @commands.command(name="ping", aliases=["latency", "pong"])
+    async def ping_command(self, ctx):
+        """Check bot's latency"""
+        import time
 
-        await self._resume_channel(channel)
+        # Measure API latency
+        api_latency = round(self.bot.latency * 1000)
+
+        # Measure response time
+        start = time.perf_counter()
+        message = await ctx.reply("🏓 Pinging...", mention_author=False)
+        end = time.perf_counter()
+        response_time = round((end - start) * 1000)
+
+        # Update with full info
         embed = discord.Embed(
-            description=f"▶️ Resumed {channel.mention} — synced to category permissions.",
-            color=config.EMBED_COLOR
+            title="🏓 Pong!",
+            color=EMBED_COLOR
         )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
 
-    # ── list ─────────────────────────────────
+        embed.add_field(name="API Latency", value=f"{api_latency}ms", inline=True)
+        embed.add_field(name="Response Time", value=f"{response_time}ms", inline=True)
 
-    @inc_prefix.command(name="list")
-    async def inc_prefix_list(self, ctx: commands.Context):
-        """Show paused and active channels across monitored categories."""
-        cats = await _get_categories(self.db, ctx.guild.id)
-        paused_ids = set(await _get_paused_channels(self.db, ctx.guild.id))
+        # Status indicator
+        if api_latency < 100:
+            status = "🟢 Excellent"
+        elif api_latency < 200:
+            status = "🟡 Good"
+        elif api_latency < 300:
+            status = "🟠 Fair"
+        else:
+            status = "🔴 Poor"
 
-        if not cats:
-            embed = discord.Embed(
-                description="No categories are being monitored.",
-                color=config.EMBED_COLOR
-            )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+        embed.add_field(name="Status", value=status, inline=True)
+        embed.set_footer(text=f"Requested by {ctx.author.display_name}")
 
-        paused_pages, paused_total = _build_list_pages(ctx.guild, cats, paused_ids, True)
-        active_pages, active_total = _build_list_pages(ctx.guild, cats, paused_ids, False)
+        await message.edit(content=None, embed=embed)
 
-        if paused_total == 0 and active_total == 0:
-            embed = discord.Embed(
-                description="No channels found in monitored categories.",
-                color=config.EMBED_COLOR
-            )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+    @commands.command(name="commands", aliases=["cmds"])
+    async def commands_command(self, ctx):
+        """Quick alias to show all commands"""
+        await ctx.invoke(self.help_command, category="all")
 
-        view = IncenseListView(
-            paused_pages=paused_pages,
-            active_pages=active_pages,
-            paused_total=paused_total,
-            active_total=active_total,
-            author_id=ctx.author.id,
-        )
-        if paused_total == 0:
-            view.showing_paused = False
-            view._update_buttons()
-
-        await ctx.send(embed=view.current_pages[0], view=view, reference=ctx.message, mention_author=False)
-
-    # ── help ─────────────────────────────────
-
-    @inc_prefix.command(name="help")
-    async def inc_prefix_help(self, ctx: commands.Context):
-        p = config.BOT_PREFIX[0]
-        bot_mention = self._bot_mention()
-        embed = discord.Embed(
-            title="🔥 Incense Help",
-            description=(
-                "Automatically restricts Poketwo the moment an Incense is purchased "
-                "in a monitored category channel — so your spawns stay exclusive."
-            ),
-            color=config.EMBED_COLOR
-        )
-        embed.add_field(
-            name="⚙️ Setup  *(Manage Server)*",
-            value=(
-                f"`{p}inc toggle` — Enable/disable the watcher\n"
-                f"`{p}inc cat add SPAWN1 SPAWN2` — Add multiple categories at once\n"
-                f"`{p}inc cat add \"Incense 1\" \"Incense 2\"` — Names with spaces\n"
-                f"`{p}inc cat remove <n>` — Stop monitoring a category\n"
-                f"`{p}inc cat list` — View all categories & channel counts"
-            ),
-            inline=False
-        )
-        embed.add_field(
-            name="⏸️ Pause  *(Manage Channels)*",
-            value=(
-                f"`{p}inc pause` / `{p}inc p` — Pause **this** channel\n"
-                f"`{p}inc pause all` / `{p}inc p all` — Pause ALL monitored categories\n"
-                f"`{p}incense pause` also works"
-            ),
-            inline=False
-        )
-        embed.add_field(
-            name="▶️ Resume  *(Manage Channels)*",
-            value=(
-                f"`{p}inc resume` / `{p}inc r` — Resume **this** channel\n"
-                f"`{p}inc resume all` / `{p}inc r all` — Resume ALL paused channels\n"
-                f"`{p}incense resume` also works\n"
-                f"*(also: `{bot_mention} incense resume all`)*"
-            ),
-            inline=False
-        )
-        embed.add_field(
-            name="📋 Status",
-            value=(
-                f"`{p}inc list` — check paused and resumed incenses\n"
-            ),
-            inline=False
-        )
-        embed.add_field(
-            name="🤖 Trigger",
-            value=(
-                "Poketwo sends `You purchased an Incense for X shards!`\n"
-                "→ Bot restricts Poketwo in **that specific channel** only.\n"
-                "→ `pause all` / `resume all` operates at the **category level** for speed.\n"
-                f"→ Use `{bot_mention} incense resume` to resume for current channel."
-            ),
-            inline=False
-        )
-        embed.set_footer(text="Slash versions: /inc <subcommand>")
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
-
-
-async def setup(bot: commands.Bot):
-    await bot.add_cog(Incense(bot))
+async def setup(bot):
+    await bot.add_cog(Help(bot))
