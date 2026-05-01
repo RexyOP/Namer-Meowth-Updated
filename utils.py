@@ -5,14 +5,31 @@ import discord
 from typing import List, Optional, Dict
 from config import POKEMON_DATA_PATH
 
+EVENT_DATA_PATH = "data/eventdata.json"
+
 def load_pokemon_data() -> List[Dict]:
-    """Load Pokemon data from pokemondata.json"""
+    """Load Pokemon data from pokemondata.json, with eventdata.json merged in.
+
+    Event pokemon are appended after regular pokemon so that regular entries
+    always take priority in searches (first-match wins).
+    """
+    data = []
+
     try:
         with open(POKEMON_DATA_PATH, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            data = json.load(f)
     except Exception as e:
         print(f"Failed to load pokemondata.json: {e}")
-        return []
+
+    try:
+        with open(EVENT_DATA_PATH, 'r', encoding='utf-8') as f:
+            event_data = json.load(f)
+        data = data + event_data
+        print(f"[DATA] Loaded {len(event_data)} event Pokemon from eventdata.json")
+    except Exception as e:
+        print(f"[DATA] Could not load eventdata.json (non-fatal): {e}")
+
+    return data
 
 def normalize_pokemon_name(name: str) -> str:
     """
