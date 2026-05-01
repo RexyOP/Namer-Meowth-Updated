@@ -281,7 +281,15 @@ class Prediction:
             with open(SECONDARY_LABELS_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict):
-                    sorted_keys = sorted(data.keys(), key=lambda x: int(x))
+                    def _sort_key(x):
+                        # Support plain integers ("50016") and alphanumeric ("50197F")
+                        try:
+                            return (0, int(x), "")
+                        except ValueError:
+                            # Extract leading digits for numeric prefix sort, rest as string
+                            m = re.match(r'^(\d+)(.*)', x)
+                            return (0, int(m.group(1)), m.group(2)) if m else (1, 0, x)
+                    sorted_keys = sorted(data.keys(), key=_sort_key)
                     self.secondary_class_names = [data[k].strip('"') for k in sorted_keys]
                 elif isinstance(data, list):
                     self.secondary_class_names = [name.strip('"') for name in data]
