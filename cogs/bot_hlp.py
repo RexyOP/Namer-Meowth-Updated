@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 from config import EMBED_COLOR, BOT_PREFIX
 
-class BotHelp(commands.Cog):
+class Help(commands.Cog):
     """Help and information commands"""
 
     def __init__(self, bot):
@@ -13,7 +13,7 @@ class BotHelp(commands.Cog):
     async def help_command(self, ctx, category: str = None):
         """Show help information
 
-        Categories: collection, category, hunt, settings, prediction, starboard, helpful, owner, all
+        Categories: collection, category, hunt, settings, prediction, starboard, helpful, incense, owner, all
         """
         prefix = BOT_PREFIX[0]  # Use first prefix for examples
 
@@ -73,6 +73,12 @@ class BotHelp(commands.Cog):
             embed.add_field(
                 name="🔍 Helpful Commands",
                 value=f"`{prefix}help helpful` - Spawn rates, shiny rates & hint solver",
+                inline=False
+            )
+
+            embed.add_field(
+                name="🔥 Incense",
+                value=f"`{prefix}help incense` - Manage Poketwo incense sessions",
                 inline=False
             )
 
@@ -762,6 +768,66 @@ class BotHelp(commands.Cog):
                 inline=False
             )
 
+        # Incense commands
+        elif category in ["incense", "inc", "incenses"]:
+            embed = discord.Embed(
+                title="🔥 Incense Commands",
+                description=(
+                    "Automatically restricts Poketwo the moment an Incense is purchased "
+                    "in a monitored category channel — so your spawns stay exclusive."
+                ),
+                color=EMBED_COLOR
+            )
+
+            embed.add_field(
+                name="⚙️ Setup  *(Manage Server)*",
+                value=(
+                    f"`{prefix}inc toggle` — Enable/disable the incense watcher\n"
+                    f"`{prefix}inc cat add SPAWN1 SPAWN2` — Add multiple categories to monitor\n"
+                    f"`{prefix}inc cat add \"Incense 1\" \"Incense 2\"` — Names with spaces use quotes\n"
+                    f"`{prefix}inc cat remove <name>` — Stop monitoring a category\n"
+                    f"`{prefix}inc cat list` — View all monitored categories & channel counts"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="⏸️ Pause  *(Manage Channels)*",
+                value=(
+                    f"`{prefix}inc pause` / `{prefix}inc p` — Pause **this** channel\n"
+                    f"`{prefix}inc pause all` / `{prefix}inc p all` — Pause ALL monitored categories\n"
+                    f"`{prefix}incense pause` also works"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="▶️ Resume  *(Manage Channels)*",
+                value=(
+                    f"`{prefix}inc resume` / `{prefix}inc r` — Resume **this** channel\n"
+                    f"`{prefix}inc resume all` / `{prefix}inc r all` — Resume ALL paused channels\n"
+                    f"`{prefix}incense resume` also works"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="📋 Status",
+                value=f"`{prefix}inc list` — View paused and active channels across monitored categories",
+                inline=False
+            )
+
+            embed.add_field(
+                name="🤖 How It Works",
+                value=(
+                    "• Poketwo sends `You purchased an Incense for X shards!`\n"
+                    "• Bot instantly restricts Poketwo in **that specific channel** only\n"
+                    "• `pause all` / `resume all` operates at the **category level** for speed\n"
+                    f"• Use `{prefix}inc help` for a quick in-chat reference"
+                ),
+                inline=False
+            )
+
         # All commands
         elif category in ["all", "commands"]:
             embed = discord.Embed(
@@ -839,6 +905,15 @@ class BotHelp(commands.Cog):
             )
 
             embed.add_field(
+                name="🔥 Incense",
+                value=(
+                    f"`{prefix}inc toggle` • `{prefix}inc cat add/remove/list`\n"
+                    f"`{prefix}inc pause [all]` • `{prefix}inc resume [all]` • `{prefix}inc list`"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
                 name="🔍 Starboard Manual Check",
                 value=f"`{prefix}catchcheck` • `{prefix}eggcheck` • `{prefix}unboxcheck`",
                 inline=False
@@ -866,7 +941,7 @@ class BotHelp(commands.Cog):
         else:
             await ctx.reply(
                 f"❌ Unknown category: `{category}`\n"
-                f"Available categories: `collection`, `category`, `hunt`, `pings`, `settings`, `prediction`, `starboard`, `helpful`, {'`owner`, ' if is_owner else ''}`all`\n"
+                f"Available categories: `collection`, `category`, `hunt`, `pings`, `settings`, `prediction`, `starboard`, `helpful`, `incense`, {'`owner`, ' if is_owner else ''}`all`\n"
                 f"Use `{prefix}help` to see the main help menu.",
                 mention_author=False
             )
@@ -988,4 +1063,4 @@ class BotHelp(commands.Cog):
         await ctx.invoke(self.help_command, category="all")
 
 async def setup(bot):
-    await bot.add_cog(BotHelp(bot))
+    await bot.add_cog(Help(bot))
