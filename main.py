@@ -141,7 +141,7 @@ async def on_ready():
         'cogs.starboard_catch',
         'cogs.starboard_egg',
         'cogs.starboard_unbox',
-        'cogs.bot_help',
+        'cogs.bot_hlp',
         'cogs.model_control',   # ← new cog
     ]
 
