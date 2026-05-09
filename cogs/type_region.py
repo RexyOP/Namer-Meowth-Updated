@@ -1,5 +1,6 @@
 """Type and Region ping management"""
 import discord
+from discord import app_commands
 from discord.ext import commands
 from config import EMBED_COLOR
 
@@ -335,6 +336,21 @@ class TypeRegionPings(commands.Cog):
         embed = _region_embed(ctx.author, enabled)
         msg = await ctx.reply(embed=embed, view=view, mention_author=False)
         view._message = msg
+
+    # ------------------------------------------------------------------
+    # Slash Commands  (registered automatically with the cog)
+    # ------------------------------------------------------------------
+    @app_commands.command(name="tp", description="Open Type Pings menu or toggle types directly")
+    @app_commands.describe(types="Type(s) to toggle, space or comma separated. Leave blank for interactive menu.")
+    async def slash_type_pings(self, interaction: discord.Interaction, types: str = None):
+        ctx = await commands.Context.from_interaction(interaction)
+        await self.type_pings_command(ctx, args=types)
+
+    @app_commands.command(name="rp", description="Open Region Pings menu or toggle regions directly")
+    @app_commands.describe(regions="Region(s) to toggle, space or comma separated. Leave blank for interactive menu.")
+    async def slash_region_pings(self, interaction: discord.Interaction, regions: str = None):
+        ctx = await commands.Context.from_interaction(interaction)
+        await self.region_pings_command(ctx, args=regions)
 
 
 async def setup(bot):
