@@ -14,35 +14,35 @@ from starboard_utils import (
 
 class StarboardUnbox(commands.Cog):
     """Automatic logging of box openings to starboard channels"""
-    
+
     def __init__(self, bot):
         self.bot = bot
-    
+
     @property
     def db(self):
         """Get database from bot"""
         return self.bot.db
-    
+
     async def get_unboxed_by_user(self, message: discord.Message):
         """Get who opened the box from the reply"""
         if not message.reference:
             return None
-        
+
         try:
             if message.reference.resolved:
                 return message.reference.resolved.author.id
-            
+
             referenced_message = await message.channel.fetch_message(message.reference.message_id)
             return referenced_message.author.id
-        
+
         except Exception as e:
             print(f"Error getting unboxed user: {e}")
             return None
-    
+
     def extract_pokemon_from_text(self, text: str) -> list:
         """Extract Pokemon data from any text using flexible patterns"""
         pokemon_found = []
-        
+
         # Patterns for Pokemon extraction
         patterns = [
             # Main pattern
@@ -50,21 +50,21 @@ class StarboardUnbox(commands.Cog):
             # Alternative pattern
             r'<:_:\d+>\s*(✨\s*)?Level\s+(\d+)\s+(.+?)\s+<:(male|female|unknown):\d+>\s*\((\d+(?:\.\d+)?)%\)',
         ]
-        
+
         lines = text.split('\n')
         for line in lines:
             line = line.strip()
-            
+
             # Skip lines that don't contain Pokemon data indicators
             if not ('<:_:' in line and 'Level' in line and '(' in line and '%' in line):
                 continue
-            
+
             # Remove markdown formatting
             clean_line = line.replace('**', '').replace('- ', '').strip()
-            
+
             # Check for shiny
             is_shiny = '✨' in clean_line
-            
+
             for pattern in patterns:
                 match = re.search(pattern, clean_line)
                 if match:
@@ -81,13 +81,13 @@ class StarboardUnbox(commands.Cog):
                         pokemon_name_with_gender = match.group(3).strip()
                         gender = match.group(4)
                         iv = float(match.group(5))
-                    
+
                     # Remove gender emoji from pokemon name
                     pokemon_name = re.sub(r'<:(male|female|unknown):\d+>', '', pokemon_name_with_gender).strip()
-                    
+
                     # Check for gigantamax
                     is_gigantamax = pokemon_name.lower().startswith('gigantamax')
-                    
+
                     pokemon_data = {
                         'pokemon_name': pokemon_name,
                         'level': level,
@@ -96,30 +96,30 @@ class StarboardUnbox(commands.Cog):
                         'is_gigantamax': is_gigantamax,
                         'gender': gender
                     }
-                    
+
                     pokemon_found.append(pokemon_data)
                     break
-        
+
         return pokemon_found
-    
+
     def parse_poketwo_unbox_message(self, message: discord.Message, unboxed_by_id: int = None) -> list:
         """Parse Poketwo box opening message to extract Pokemon information"""
         if not message.embeds:
             return []
-        
+
         embed = message.embeds[0]
         pokemon_found = []
-        
+
         # Check if this is a box opening message
         title = embed.title or ""
-        
+
         # Keywords for box opening messages
         opening_keywords = ['open', 'opening', 'box', 'chest', 'mystery', 'egg', 'eggs', 'bundle', 'puddle', 'rain', 'storm']
         is_opening_message = any(keyword.lower() in title.lower() for keyword in opening_keywords)
-        
+
         if not is_opening_message:
             return []
-        
+
         # Try to extract Pokemon from description
         if embed.description:
             pokemon_from_desc = self.extract_pokemon_from_text(embed.description)
@@ -127,7 +127,7 @@ class StarboardUnbox(commands.Cog):
                 pokemon_data['unboxed_by_id'] = unboxed_by_id
                 pokemon_data['message_type'] = 'unbox'
                 pokemon_found.append(pokemon_data)
-        
+
         # Try to extract Pokemon from all fields
         for field in embed.fields:
             if field.value:
@@ -136,9 +136,9 @@ class StarboardUnbox(commands.Cog):
                     pokemon_data['unboxed_by_id'] = unboxed_by_id
                     pokemon_data['message_type'] = 'unbox'
                     pokemon_found.append(pokemon_data)
-        
+
         return pokemon_found
-    
+
     def create_unbox_embed(self, pokemon_data: dict, original_message: discord.Message = None) -> discord.Embed:
         """Create embed for unbox"""
         pokemon_name = pokemon_data['pokemon_name']
@@ -148,33 +148,33 @@ class StarboardUnbox(commands.Cog):
         is_gigantamax = pokemon_data['is_gigantamax']
         gender = pokemon_data.get('gender')
         unboxed_by_id = pokemon_data.get('unboxed_by_id')
-        
+
         # Format IV
         iv_display = f"{iv}%"
-        
+
         # Get gender emoji
         gender_emoji = get_gender_emoji(gender)
-        
+
         # Format Pokemon name with gender
         if gender_emoji:
             pokemon_display = f"{pokemon_name} {gender_emoji}"
         else:
             pokemon_display = pokemon_name
-        
+
         # Get Pokemon image URL
         image_url = find_pokemon_image_url(pokemon_name, is_shiny, gender, is_gigantamax)
-        
+
         embed = discord.Embed(color=EMBED_COLOR, timestamp=datetime.utcnow())
-        
+
         # Determine title based on criteria
         title_parts = []
-        
+
         if is_shiny:
             title_parts.append("✨ Shiny")
-        
+
         if is_gigantamax:
             title_parts.append(f"{Emojis.GIGANTAMAX} Gigantamax")
-        
+
         # Check IV
         try:
             iv_value = float(iv)
@@ -184,79 +184,79 @@ class StarboardUnbox(commands.Cog):
                 title_parts.append("📉 Low IV")
         except ValueError:
             pass
-        
+
         if title_parts:
             embed.title = f"{Emojis.GIFTBOX} " + " ".join(title_parts) + f" Unbox Detected {Emojis.GIFTBOX}"
         else:
             embed.title = f"{Emojis.GIFTBOX} Rare Unbox Detected {Emojis.GIFTBOX}"
-        
+
         # Description
         base_description = f"**Pokémon:** {pokemon_display}\n**Level:** {level}\n**IV:** {iv_display}"
         if unboxed_by_id:
             embed.description = f"**Unboxed By:** <@{unboxed_by_id}>\n{base_description}"
         else:
             embed.description = base_description
-        
+
         if image_url:
             embed.set_thumbnail(url=image_url)
-        
+
         return embed
-    
+
     async def send_to_starboard_channels(self, guild: discord.Guild, pokemon_list: list, original_message: discord.Message = None):
         """Send unbox data to appropriate starboard channels"""
         settings = await self.db.get_guild_settings(guild.id)
-        
+
         # Process each Pokemon that meets criteria
         for pokemon_data in pokemon_list:
             is_shiny = pokemon_data['is_shiny']
             is_gigantamax = pokemon_data['is_gigantamax']
             iv = pokemon_data['iv']
-            
+
             # Check if this Pokemon meets starboard criteria
             if not (is_shiny or is_gigantamax or iv >= HIGH_IV_THRESHOLD or iv <= LOW_IV_THRESHOLD):
                 continue
-            
+
             # Determine which channels to send to
             channels_to_send = []
-            
+
             # General unbox channel
             unbox_channel_id = settings.get('starboard_unbox_channel_id')
             if unbox_channel_id:
                 channels_to_send.append(unbox_channel_id)
-            
+
             # Shiny channel
             if is_shiny:
                 shiny_channel_id = settings.get('starboard_shiny_channel_id')
                 if shiny_channel_id and shiny_channel_id not in channels_to_send:
                     channels_to_send.append(shiny_channel_id)
-            
+
             # Gigantamax channel
             if is_gigantamax:
                 gmax_channel_id = settings.get('starboard_gigantamax_channel_id')
                 if gmax_channel_id and gmax_channel_id not in channels_to_send:
                     channels_to_send.append(gmax_channel_id)
-            
+
             # IV channels
             try:
                 iv_value = float(iv)
-                
+
                 if iv_value >= HIGH_IV_THRESHOLD:
                     highiv_channel_id = settings.get('starboard_highiv_channel_id')
                     if highiv_channel_id and highiv_channel_id not in channels_to_send:
                         channels_to_send.append(highiv_channel_id)
-                
+
                 elif iv_value <= LOW_IV_THRESHOLD:
                     lowiv_channel_id = settings.get('starboard_lowiv_channel_id')
                     if lowiv_channel_id and lowiv_channel_id not in channels_to_send:
                         channels_to_send.append(lowiv_channel_id)
-            
+
             except ValueError:
                 pass
-            
+
             # Create embed and view
             embed = self.create_unbox_embed(pokemon_data, original_message)
             view = create_jump_button_view(original_message)
-            
+
             # Send to all applicable channels
             for channel_id in channels_to_send:
                 channel = guild.get_channel(channel_id)
@@ -265,7 +265,7 @@ class StarboardUnbox(commands.Cog):
                         await channel.send(embed=embed, view=view)
                     except Exception as e:
                         print(f"Error sending to starboard channel {channel_id}: {e}")
-            
+
             # Send to global unbox channel if configured
             global_unbox_channel_id = await self.db.get_global_starboard_unbox_channel()
             if global_unbox_channel_id:
@@ -275,7 +275,7 @@ class StarboardUnbox(commands.Cog):
                         await global_channel.send(embed=embed, view=view)
                     except Exception as e:
                         print(f"Error sending to global starboard channel: {e}")
-    
+
     async def box_check_context_callback(self, interaction: discord.Interaction, message: discord.Message):
         """Context menu command to check a box opening message and DM results to the user"""
         if message.author.id != POKETWO_USER_ID or not message.embeds:
@@ -357,15 +357,17 @@ class StarboardUnbox(commands.Cog):
     @commands.command(name="unboxcheck", aliases=["uc", "checkunbox"])
     @commands.has_permissions(administrator=True)
     async def unbox_check_command(self, ctx, *, input_data: str = None):
-        """Manually check a Poketwo box opening message and send to starboard
-        
+        """Manually check a Poketwo box opening message and send results to DMs
+
         Usage:
             p!unboxcheck (reply to a message)
             p!unboxcheck <message_id>
+
+        Works across all servers and sends results directly to your DMs.
         """
         original_message = None
         unboxed_by_id = None
-        
+
         if input_data is None:
             if ctx.message.reference and ctx.message.reference.resolved:
                 original_message = ctx.message.reference.resolved
@@ -383,29 +385,37 @@ class StarboardUnbox(commands.Cog):
             if input_data.strip().isdigit():
                 message_id = int(input_data.strip())
                 try:
+                    original_message = None
+
+                    # First, try the current server
                     try:
                         original_message = await ctx.channel.fetch_message(message_id)
                     except discord.NotFound:
-                        found_message = None
-                        for channel in ctx.guild.text_channels:
-                            if channel.permissions_for(ctx.guild.me).read_message_history:
-                                try:
-                                    found_message = await channel.fetch_message(message_id)
-                                    original_message = found_message
-                                    break
-                                except (discord.NotFound, discord.Forbidden):
-                                    continue
-                        
-                        if not found_message:
-                            await ctx.reply(f"❌ Could not find message with ID `{message_id}` in this server.", mention_author=False)
-                            return
-                    
+                        pass
+
+                    # If not found, search all guilds the bot is in
+                    if not original_message:
+                        for guild in self.bot.guilds:
+                            for channel in guild.text_channels:
+                                if channel.permissions_for(guild.me).read_message_history:
+                                    try:
+                                        original_message = await channel.fetch_message(message_id)
+                                        break
+                                    except (discord.NotFound, discord.Forbidden):
+                                        continue
+                            if original_message:
+                                break
+
+                    if not original_message:
+                        await ctx.reply(f"❌ Could not find message with ID `{message_id}` in any accessible server.", mention_author=False)
+                        return
+
                     if original_message.author.id != POKETWO_USER_ID:
                         await ctx.reply(f"❌ The message with ID `{message_id}` is not from Poketwo.", mention_author=False)
                         return
-                    
+
                     unboxed_by_id = await self.get_unboxed_by_user(original_message)
-                
+
                 except ValueError:
                     await ctx.reply(f"❌ Invalid message ID: `{input_data.strip()}`", mention_author=False)
                     return
@@ -415,68 +425,142 @@ class StarboardUnbox(commands.Cog):
             else:
                 await ctx.reply("❌ Please provide a valid message ID or reply to a message.", mention_author=False)
                 return
-        
+
         # Parse unbox message
         pokemon_list = self.parse_poketwo_unbox_message(original_message, unboxed_by_id)
-        
+
         if not pokemon_list:
             await ctx.reply("❌ Invalid message format. Please make sure it's a proper Poketwo box opening message.", mention_author=False)
             return
-        
+
         # Check which Pokemon meet starboard criteria
         qualifying_pokemon = []
+        all_pokemon_data = []
+
         for pokemon_data in pokemon_list:
             is_shiny = pokemon_data['is_shiny']
             is_gigantamax = pokemon_data['is_gigantamax']
             iv = pokemon_data['iv']
-            
+
+            all_pokemon_data.append(pokemon_data)
+
             if is_shiny or is_gigantamax or iv >= HIGH_IV_THRESHOLD or iv <= LOW_IV_THRESHOLD:
                 qualifying_pokemon.append(pokemon_data)
-        
-        if not qualifying_pokemon:
-            pokemon_summary = []
-            for pokemon_data in pokemon_list:
-                gender_emoji = get_gender_emoji(pokemon_data.get('gender'))
-                pokemon_display = f"{pokemon_data['pokemon_name']} {gender_emoji}" if gender_emoji else pokemon_data['pokemon_name']
-                pokemon_summary.append(f"**{pokemon_display}** (Level {pokemon_data['level']}, {pokemon_data['iv']}%)")
-            
-            summary_text = "\n".join(pokemon_summary) if pokemon_summary else "No Pokemon found"
-            await ctx.reply(
-                f"❌ No Pokemon in this unbox meet starboard criteria.\n"
-                f"**Found Pokemon:**\n{summary_text}\n"
-                f"**Criteria:** Shiny, Gigantamax, or IV ≥{HIGH_IV_THRESHOLD}% or ≤{LOW_IV_THRESHOLD}%",
-                mention_author=False
+
+        # Send results to DMs
+        try:
+            dm_channel = await ctx.author.create_dm()
+
+            # Send summary embed
+            summary_embed = discord.Embed(
+                title="📬 Box Check Results",
+                description=f"Found **{len(all_pokemon_data)}** Pokemon total",
+                color=EMBED_COLOR,
+                timestamp=datetime.utcnow()
             )
-            return
-        
-        # Send to starboard
-        await self.send_to_starboard_channels(ctx.guild, qualifying_pokemon, original_message)
-        
-        # Create summary
-        summary_lines = []
-        for pokemon_data in qualifying_pokemon:
-            criteria_met = []
-            if pokemon_data['is_shiny']:
-                criteria_met.append("✨ Shiny")
-            if pokemon_data['is_gigantamax']:
-                criteria_met.append(f"{Emojis.GIGANTAMAX} Gigantamax")
-            if pokemon_data['iv'] >= HIGH_IV_THRESHOLD:
-                criteria_met.append(f"📈 High IV ({pokemon_data['iv']}%)")
-            elif pokemon_data['iv'] <= LOW_IV_THRESHOLD:
-                criteria_met.append(f"📉 Low IV ({pokemon_data['iv']}%)")
-            
-            criteria_text = ", ".join(criteria_met)
-            gender_emoji = get_gender_emoji(pokemon_data.get('gender'))
-            pokemon_display = f"{pokemon_data['pokemon_name']} {gender_emoji}" if gender_emoji else pokemon_data['pokemon_name']
-            summary_lines.append(f"**{pokemon_display}** - {criteria_text}")
-        
-        summary_text = "\n".join(summary_lines)
-        await ctx.reply(
-            f"✅ {len(qualifying_pokemon)} Pokemon sent to starboard!\n"
-            f"{summary_text}",
-            mention_author=False
-        )
-    
+            summary_embed.add_field(
+                name="✅ Qualifying Pokemon",
+                value=f"{len(qualifying_pokemon)} Pokemon meet starboard criteria" if qualifying_pokemon else "None meet criteria",
+                inline=False
+            )
+            summary_embed.add_field(
+                name="📊 Criteria",
+                value=f"✨ Shiny\n{Emojis.GIGANTAMAX} Gigantamax\n📈 IV ≥ {HIGH_IV_THRESHOLD}%\n📉 IV ≤ {LOW_IV_THRESHOLD}%",
+                inline=False
+            )
+
+            if original_message.guild:
+                summary_embed.add_field(
+                    name="📍 Server",
+                    value=original_message.guild.name,
+                    inline=True
+                )
+
+            await dm_channel.send(embed=summary_embed)
+
+            # Send all Pokemon details
+            if pokemon_list:
+                all_pokemon_embed = discord.Embed(
+                    title="📋 All Pokemon Found",
+                    color=EMBED_COLOR,
+                    timestamp=datetime.utcnow()
+                )
+
+                pokemon_details = []
+                for pokemon_data in pokemon_list:
+                    gender_emoji = get_gender_emoji(pokemon_data.get('gender'))
+                    pokemon_display = f"{pokemon_data['pokemon_name']} {gender_emoji}" if gender_emoji else pokemon_data['pokemon_name']
+
+                    shiny_indicator = "✨" if pokemon_data['is_shiny'] else ""
+                    gigantamax_indicator = f"{Emojis.GIGANTAMAX}" if pokemon_data['is_gigantamax'] else ""
+                    indicators = f" {shiny_indicator} {gigantamax_indicator}".strip()
+
+                    pokemon_details.append(
+                        f"**{pokemon_display}**{f' {indicators}' if indicators else ''}\n"
+                        f"Level {pokemon_data['level']} • IV: {pokemon_data['iv']}%"
+                    )
+
+                all_pokemon_embed.description = "\n".join(pokemon_details)
+                await dm_channel.send(embed=all_pokemon_embed)
+
+            # Send individual embeds for qualifying Pokemon
+            if qualifying_pokemon:
+                await dm_channel.send("**✅ Qualifying Pokemon Details:**")
+
+                for pokemon_data in qualifying_pokemon:
+                    embed = self.create_unbox_embed(pokemon_data, original_message)
+                    view = create_jump_button_view(original_message)
+                    await dm_channel.send(embed=embed, view=view)
+
+            # Send result message in the server
+            if not qualifying_pokemon:
+                pokemon_summary = []
+                for pokemon_data in all_pokemon_data:
+                    gender_emoji = get_gender_emoji(pokemon_data.get('gender'))
+                    pokemon_display = f"{pokemon_data['pokemon_name']} {gender_emoji}" if gender_emoji else pokemon_data['pokemon_name']
+                    pokemon_summary.append(f"**{pokemon_display}** (Level {pokemon_data['level']}, {pokemon_data['iv']}%)")
+
+                summary_text = "\n".join(pokemon_summary) if pokemon_summary else "No Pokemon found"
+                await ctx.reply(
+                    f"✅ Results sent to your DMs!\n\n"
+                    f"❌ No Pokemon meet starboard criteria.\n"
+                    f"**Found Pokemon:**\n{summary_text}\n"
+                    f"**Criteria:** Shiny, Gigantamax, or IV ≥{HIGH_IV_THRESHOLD}% or ≤{LOW_IV_THRESHOLD}%",
+                    mention_author=False
+                )
+            else:
+                # Send to starboard if in a guild
+                if original_message.guild:
+                    await self.send_to_starboard_channels(original_message.guild, qualifying_pokemon, original_message)
+
+                # Create summary for server reply
+                summary_lines = []
+                for pokemon_data in qualifying_pokemon:
+                    criteria_met = []
+                    if pokemon_data['is_shiny']:
+                        criteria_met.append("✨ Shiny")
+                    if pokemon_data['is_gigantamax']:
+                        criteria_met.append(f"{Emojis.GIGANTAMAX} Gigantamax")
+                    if pokemon_data['iv'] >= HIGH_IV_THRESHOLD:
+                        criteria_met.append(f"📈 High IV ({pokemon_data['iv']}%)")
+                    elif pokemon_data['iv'] <= LOW_IV_THRESHOLD:
+                        criteria_met.append(f"📉 Low IV ({pokemon_data['iv']}%)")
+
+                    criteria_text = ", ".join(criteria_met)
+                    gender_emoji = get_gender_emoji(pokemon_data.get('gender'))
+                    pokemon_display = f"{pokemon_data['pokemon_name']} {gender_emoji}" if gender_emoji else pokemon_data['pokemon_name']
+                    summary_lines.append(f"**{pokemon_display}** - {criteria_text}")
+
+                summary_text = "\n".join(summary_lines)
+                await ctx.reply(
+                    f"✅ {len(qualifying_pokemon)} Pokemon sent to your DMs and starboard!\n"
+                    f"{summary_text}",
+                    mention_author=False
+                )
+
+        except discord.Forbidden:
+            await ctx.reply("❌ Couldn't send you DMs. Please enable DMs from server members and try again.", mention_author=False)
+
     @unbox_check_command.error
     async def unbox_check_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
@@ -484,44 +568,44 @@ class StarboardUnbox(commands.Cog):
         else:
             print(f"Unexpected error in unboxcheck: {error}")
             await ctx.reply("❌ An unexpected error occurred. Please try again.", mention_author=False)
-    
+
     @commands.Cog.listener()
     async def on_message(self, message):
         """Listen for Poketwo box opening messages"""
         if message.author.id != POKETWO_USER_ID:
             return
-        
+
         # Check if it's a box opening message
         if not message.embeds:
             return
-        
+
         embed = message.embeds[0]
         title = embed.title or ""
-        
+
         # Check for opening keywords
         opening_keywords = ['open', 'opening', 'box', 'chest', 'mystery', 'egg', 'eggs', 'bundle', 'puddle', 'rain', 'storm']
         is_opening_message = any(keyword.lower() in title.lower() for keyword in opening_keywords)
-        
+
         if not is_opening_message:
             return
-        
+
         # Get unboxed user
         unboxed_by_id = await self.get_unboxed_by_user(message)
         pokemon_list = self.parse_poketwo_unbox_message(message, unboxed_by_id)
-        
+
         if not pokemon_list:
             return
-        
+
         # Filter Pokemon that meet criteria
         qualifying_pokemon = []
         for pokemon_data in pokemon_list:
             is_shiny = pokemon_data['is_shiny']
             is_gigantamax = pokemon_data['is_gigantamax']
             iv = pokemon_data['iv']
-            
+
             if is_shiny or is_gigantamax or iv >= HIGH_IV_THRESHOLD or iv <= LOW_IV_THRESHOLD:
                 qualifying_pokemon.append(pokemon_data)
-        
+
         if qualifying_pokemon:
             await self.send_to_starboard_channels(message.guild, qualifying_pokemon, message)
 
