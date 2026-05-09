@@ -6,6 +6,7 @@ import aiohttp
 import psutil
 import gc
 from discord.ext import commands
+from discord import app_commands
 from database import Database
 from predict import Prediction
 from config import TOKEN, BOT_PREFIX
@@ -30,7 +31,7 @@ bot = commands.Bot(
     intents=intents,
     help_command=None,
     case_insensitive=True,
-    max_messages=None   # disable message cache — bot never looks up past messages
+    max_messages=None
 )
 
 # Global instances
@@ -44,10 +45,7 @@ bot.prediction_count = 0
 
 
 async def initialize_predictor():
-    """
-    Create the Prediction object — does NOT load models into RAM.
-    Models are loaded on demand via the !loadmodel command.
-    """
+    """Create the Prediction object — does NOT load models into RAM."""
     try:
         bot.predictor = Prediction()
         print("✅ Predictor object created (models not loaded — use !loadmodel when ready)")
@@ -82,7 +80,7 @@ async def initialize_http_session():
 
 async def memory_monitor():
     """Monitor and log memory usage periodically"""
-    await asyncio.sleep(10)  # Wait for bot to fully start
+    await asyncio.sleep(10)
 
     while True:
         try:
@@ -94,7 +92,6 @@ async def memory_monitor():
 
             print(f"[MEMORY] {mem_mb:.1f} MB | Models: {model_status} | Predictions: {bot.prediction_count}")
 
-            # Force aggressive GC if memory > 400 MB
             if mem_mb > 400:
                 print(f"[MEMORY] ⚠️ High usage ({mem_mb:.1f} MB), forcing GC...")
                 gc.collect()
@@ -117,16 +114,10 @@ async def on_ready():
     initial_mem = bot.process.memory_info().rss / 1024 / 1024
     print(f"[MEMORY] Initial: {initial_mem:.1f} MB")
 
-    # Initialize HTTP session
     await initialize_http_session()
-
-    # Create predictor object (no model loading yet)
     await initialize_predictor()
-
-    # Initialize database
     await initialize_database()
 
-    # Load cogs
     cogs_to_load = [
         'cogs.collection',
         'cogs.type_region',
@@ -142,7 +133,7 @@ async def on_ready():
         'cogs.starboard_egg',
         'cogs.starboard_unbox',
         'cogs.bot_hlp',
-        'cogs.model_control',   # ← new cog
+        'cogs.model_control',
     ]
 
     try:
@@ -163,6 +154,13 @@ async def on_ready():
             print(f"❌ Failed to load {cog}: {e}")
             failed_count += 1
 
+    # Sync slash commands with Discord
+    try:
+        synced = await bot.tree.sync()
+        print(f"✅ Synced {len(synced)} slash commands")
+    except Exception as e:
+        print(f"⚠️ Failed to sync slash commands: {e}")
+
     post_startup_mem = bot.process.memory_info().rss / 1024 / 1024
 
     print(f"\n{'='*50}")
@@ -176,7 +174,6 @@ async def on_ready():
     print(f"💡 Use !loadmodel to load prediction models when starting an incense session")
     print(f"{'='*50}\n")
 
-    # Start memory monitor
     asyncio.create_task(memory_monitor())
 
 
