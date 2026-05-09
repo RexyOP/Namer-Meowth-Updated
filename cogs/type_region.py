@@ -320,6 +320,10 @@ class TypeRegionPings(commands.Cog):
                 state = "✅" if now_on else "❌"
                 toggled.append(f"{state} {REGION_EMOJI.get(r, '')} {r.capitalize()}")
 
+            # Invalidate cache so next spawn sees the updated region pings
+            if self.gcache:
+                self.gcache.invalidate_region_pingers(ctx.guild.id)
+
             enabled = await self.db.get_user_region_pings(ctx.author.id, ctx.guild.id)
             embed = _region_embed(ctx.author, enabled)
             toggle_text = "\n".join(toggled)
