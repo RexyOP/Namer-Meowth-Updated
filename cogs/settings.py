@@ -1,6 +1,7 @@
 """Server and user settings management"""
 import asyncio
 import discord
+from discord import app_commands
 from discord.ext import commands
 from config import EMBED_COLOR, Emojis
 
@@ -106,6 +107,68 @@ class AFKView(discord.ui.View):
         new_type = await self.cog.db.is_type_ping_afk(self.user_id)
         self.update_buttons(new_col, new_shy, new_type, new_rgn)
         await interaction.response.edit_message(embed=self._create_embed(new_col, new_shy, new_type, new_rgn), view=self)
+
+
+
+
+# ---------------------------------------------------------------------------
+# Confirm view for /clear-pings (slash version can't use wait_for)
+# ---------------------------------------------------------------------------
+class _ClearPingsConfirmView(discord.ui.View):
+    def __init__(self, author_id, db, bot, guild, target_id, target_name):
+        super().__init__(timeout=30)
+        self.author_id  = author_id
+        self.db         = db
+        self.bot        = bot
+        self.guild      = guild
+        self.target_id  = target_id
+        self.target_name = target_name
+
+    async def _check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("Not yours!", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="Confirm", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check(interaction):
+            return
+        self.stop()
+        db_raw   = self.db.db
+        guild_id = self.guild.id
+
+        if self.target_id:
+            col_res  = await db_raw.collections.delete_many( {"user_id": self.target_id, "guild_id": guild_id})
+            shy_res  = await db_raw.shiny_hunts.delete_many( {"user_id": self.target_id, "guild_id": guild_id})
+            type_res = await db_raw.type_pings.delete_many(  {"user_id": self.target_id, "guild_id": guild_id})
+            rgn_res  = await db_raw.region_pings.delete_many({"user_id": self.target_id, "guild_id": guild_id})
+            embed = discord.Embed(title="✅ User Ping Data Cleared", color=EMBED_COLOR)
+            embed.add_field(name="User",         value=f"{self.target_name} (`{self.target_id}`)", inline=False)
+        else:
+            col_res  = await db_raw.collections.delete_many( {"guild_id": guild_id})
+            shy_res  = await db_raw.shiny_hunts.delete_many( {"guild_id": guild_id})
+            type_res = await db_raw.type_pings.delete_many(  {"guild_id": guild_id})
+            rgn_res  = await db_raw.region_pings.delete_many({"guild_id": guild_id})
+            embed = discord.Embed(title="✅ Server Ping Data Cleared", color=EMBED_COLOR)
+
+        embed.add_field(name="Server",       value=self.guild.name,                   inline=False)
+        embed.add_field(name="Collections",  value=f"{col_res.deleted_count} removed",  inline=True)
+        embed.add_field(name="Shiny Hunts",  value=f"{shy_res.deleted_count} removed",  inline=True)
+        embed.add_field(name="Type Pings",   value=f"{type_res.deleted_count} removed",  inline=True)
+        embed.add_field(name="Region Pings", value=f"{rgn_res.deleted_count} removed",  inline=True)
+        embed.set_footer(text=f"Cleared by {interaction.user} • Guild ID: {guild_id}")
+        await interaction.response.edit_message(content=None, embed=embed, view=None)
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check(interaction):
+            return
+        self.stop()
+        await interaction.response.edit_message(content="❌ Cancelled. No data was cleared.", view=None)
+
+    async def on_timeout(self):
+        pass  # ephemeral message — no edit needed
 
 
 # ---------------------------------------------------------------------------
@@ -429,6 +492,94 @@ class Settings(commands.Cog):
     @clear_server_pings_command.error
     async def clear_server_pings_error(self, ctx, error):
         await ctx.reply(f"❌ An unexpected error occurred: {error}", mention_author=False)
+
+    # ------------------------------------------------------------------
+    # Slash Commands  (registered automatically with the cog)
+    # ------------------------------------------------------------------
+    @app_commands.command(name="afk", description="Toggle your global AFK status for pings")
+    async def slash_afk(self, interaction: discord.Interaction):
+        ctx = await commands.Context.from_interaction(interaction)
+        await self.afk_command(ctx)
+
+    @app_commands.command(name="server-settings", description="View current server settings")
+    async def slash_server_settings(self, interaction: discord.Interaction):
+        ctx = await commands.Context.from_interaction(interaction)
+        await self.server_settings_command(ctx)
+
+    @app_commands.command(name="rare-role", description="Set or clear the rare Pokémon ping role (Admin only)")
+    @app_commands.describe(role="The role to ping for rare Pokémon. Omit to clear.")
+    @app_commands.default_permissions(administrator=True)
+    async def slash_rare_role(self, interaction: discord.Interaction, role: discord.Role = None):
+        ctx = await commands.Context.from_interaction(interaction)
+        await self.rare_role_command(ctx, role=role)
+
+    @app_commands.command(name="regional-role", description="Set or clear the regional Pokémon ping role (Admin only)")
+    @app_commands.describe(role="The role to ping for regional Pokémon. Omit to clear.")
+    @app_commands.default_permissions(administrator=True)
+    async def slash_regional_role(self, interaction: discord.Interaction, role: discord.Role = None):
+        ctx = await commands.Context.from_interaction(interaction)
+        await self.regional_role_command(ctx, role=role)
+
+    @app_commands.command(name="only-pings", description="Toggle or view only-pings mode (Admin only)")
+    @app_commands.describe(enabled="true to enable, false to disable, omit to view current status")
+    @app_commands.default_permissions(administrator=True)
+    async def slash_only_pings(self, interaction: discord.Interaction, enabled: bool = None):
+        ctx = await commands.Context.from_interaction(interaction)
+        await self.only_pings_command(ctx, enabled=enabled)
+
+    @app_commands.command(name="toggle-feature", description="Toggle a server feature like best_name (Admin only)")
+    @app_commands.describe(feature="Feature to toggle, e.g. 'best_name'")
+    @app_commands.default_permissions(administrator=True)
+    async def slash_toggle(self, interaction: discord.Interaction, feature: str):
+        ctx = await commands.Context.from_interaction(interaction)
+        await self.toggle_command(ctx, feature=feature)
+
+    @app_commands.command(name="clear-pings", description="Clear all ping data for a user or the entire server (Admin only)")
+    @app_commands.describe(target="@mention or user ID to clear a single user, leave blank to clear all users")
+    @app_commands.default_permissions(administrator=True)
+    async def slash_clear_pings(self, interaction: discord.Interaction, target: str = None):
+        # Permission check
+        is_owner     = await self.bot.is_owner(interaction.user)
+        is_srv_owner = interaction.user.id == interaction.guild.owner_id
+        is_admin     = interaction.user.guild_permissions.administrator
+        if not (is_owner or is_srv_owner or is_admin):
+            return await interaction.response.send_message(
+                "❌ You need to be the server owner, an administrator, or the bot owner.",
+                ephemeral=True
+            )
+
+        # Resolve target
+        target_id = None
+        target_name = None
+        if target is not None:
+            raw = target.strip("<@!>")
+            if not raw.isdigit():
+                return await interaction.response.send_message(
+                    "❌ Invalid user. Use a @mention or numeric user ID.", ephemeral=True
+                )
+            target_id = int(raw)
+            user_obj = self.bot.get_user(target_id)
+            if user_obj is None:
+                try:
+                    user_obj = await self.bot.fetch_user(target_id)
+                except discord.NotFound:
+                    pass
+            target_name = str(user_obj) if user_obj else f"User {target_id}"
+
+        if target_id:
+            prompt = f"⚠️ Clear **all ping data** for **{target_name}** (`{target_id}`) in **{interaction.guild.name}**?"
+        else:
+            prompt = f"⚠️ Clear **all ping data for every user** in **{interaction.guild.name}**?"
+
+        view = _ClearPingsConfirmView(
+            author_id=interaction.user.id,
+            db=self.db,
+            bot=self.bot,
+            guild=interaction.guild,
+            target_id=target_id,
+            target_name=target_name,
+        )
+        await interaction.response.send_message(prompt, view=view, ephemeral=True)
 
 
 async def setup(bot):
