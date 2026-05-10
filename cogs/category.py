@@ -90,16 +90,23 @@ class Category(commands.Cog):
         Handles:
         - Single pokemon: "pikachu"
         - Multiple pokemon: "pikachu, charizard, mewtwo"
-        - All variants: "furfrou all", "arceus all"
+        - All variants: "furfrou all", "arceus all", "all furfrou", "all arceus"
         """
         parts = [p.strip() for p in input_string.split(",") if p.strip()]
         all_pokemon = []
         invalid = []
 
         for part in parts:
-            # Check for "all" variants
-            if part.lower().endswith(" all"):
-                base_name = part[:-4].strip()
+            part_lower = part.lower()
+            is_all = part_lower.endswith(" all") or part_lower.startswith("all ")
+
+            if is_all:
+                # Strip "all" from either end
+                if part_lower.startswith("all "):
+                    base_name = part[4:].strip()
+                else:
+                    base_name = part[:-4].strip()
+
                 variants = get_pokemon_with_variants(base_name, self.pokemon_data)
 
                 if variants:
@@ -121,7 +128,7 @@ class Category(commands.Cog):
     async def category_group(self, ctx):
         """Category management commands"""
         if ctx.invoked_subcommand is None:
-            await ctx.reply("Usage: `p!cat [create/edit/delete] or p!cat [add/remove/list/info]`", mention_author=False)
+            await ctx.reply("Usage: `p!cat [create/edit/delete] or p!cat [add/remove/list/info] or p!cat [addpokemon/removepokemon]`", mention_author=False)
 
     @category_group.command(name="create")
     @commands.has_permissions(administrator=True)
@@ -314,6 +321,119 @@ class Category(commands.Cog):
 
         await ctx.reply(response, mention_author=False)
 
+    @category_group.command(name="addpokemon", aliases=["addpoke"])
+    @commands.has_permissions(administrator=True)
+    async def category_addpokemon(self, ctx, name: str, *, pokemon_input: str):
+        """Add Pokémon to an existing category (Admin only)
+
+        Does NOT replace the existing list — appends to it.
+
+        Examples:
+            p!cat addpokemon Rares marshadow, hoopa
+            p!cat addpokemon Furfrou furfrou all
+            p!cat addpokemon Arceus all arceus
+        """
+        # Check if category exists
+        existing = await self.db.get_category(ctx.guild.id, name)
+        if not existing:
+            await ctx.reply(f"❌ Category `{name}` does not exist. Use `p!cat create` to create it.", mention_author=False)
+            return
+
+        # Parse pokemon
+        pokemon_list, invalid = self.parse_pokemon_input(pokemon_input)
+
+        if not pokemon_list:
+            error_msg = "No valid Pokémon found"
+            if invalid:
+                error_msg += f". Invalid: {', '.join(invalid[:10])}"
+            await ctx.reply(error_msg, mention_author=False)
+            return
+
+        # Merge with existing, avoiding duplicates
+        existing_pokemon = set(existing.get('pokemon', []))
+        new_pokemon = [p for p in pokemon_list if p not in existing_pokemon]
+
+        if not new_pokemon:
+            await ctx.reply(f"All provided Pokémon are already in `{name}`.", mention_author=False)
+            return
+
+        merged = list(existing_pokemon) + new_pokemon
+        await self.db.update_category(ctx.guild.id, name, merged)
+
+        response = f"✅ Added {len(new_pokemon)} Pokémon to `{name}`"
+        if len(new_pokemon) <= 20:
+            response += f": {', '.join(new_pokemon)}"
+        else:
+            response += f": {', '.join(new_pokemon[:20])} and {len(new_pokemon) - 20} more"
+
+        skipped = [p for p in pokemon_list if p in existing_pokemon]
+        if skipped:
+            response += f"\n> -# {len(skipped)} already in category (skipped)"
+
+        if invalid:
+            response += f"\n⚠️ Invalid: {', '.join(invalid[:30])}"
+            if len(invalid) > 30:
+                response += f" and {len(invalid) - 30} more..."
+
+        await ctx.reply(response, mention_author=False)
+
+    @category_group.command(name="removepokemon", aliases=["removepoke"])
+    @commands.has_permissions(administrator=True)
+    async def category_removepokemon(self, ctx, name: str, *, pokemon_input: str):
+        """Remove specific Pokémon from an existing category (Admin only)
+
+        Does NOT delete the category — only removes the listed Pokémon from it.
+
+        Examples:
+            p!cat removepokemon Rares marshadow, hoopa
+            p!cat removepokemon Furfrou furfrou all
+            p!cat removepokemon Arceus all arceus
+        """
+        # Check if category exists
+        existing = await self.db.get_category(ctx.guild.id, name)
+        if not existing:
+            await ctx.reply(f"❌ Category `{name}` does not exist.", mention_author=False)
+            return
+
+        # Parse pokemon
+        pokemon_list, invalid = self.parse_pokemon_input(pokemon_input)
+
+        if not pokemon_list:
+            error_msg = "No valid Pokémon found"
+            if invalid:
+                error_msg += f". Invalid: {', '.join(invalid[:10])}"
+            await ctx.reply(error_msg, mention_author=False)
+            return
+
+        existing_pokemon = set(existing.get('pokemon', []))
+        to_remove = set(pokemon_list)
+
+        actually_removed = [p for p in pokemon_list if p in existing_pokemon]
+        not_in_category = [p for p in pokemon_list if p not in existing_pokemon]
+
+        if not actually_removed:
+            await ctx.reply(f"None of the provided Pokémon are in `{name}`.", mention_author=False)
+            return
+
+        updated = [p for p in existing.get('pokemon', []) if p not in to_remove]
+        await self.db.update_category(ctx.guild.id, name, updated)
+
+        response = f"✅ Removed {len(actually_removed)} Pokémon from `{name}`"
+        if len(actually_removed) <= 20:
+            response += f": {', '.join(actually_removed)}"
+        else:
+            response += f": {', '.join(actually_removed[:20])} and {len(actually_removed) - 20} more"
+
+        if not_in_category:
+            response += f"\n> -# {len(not_in_category)} were not in the category (skipped)"
+
+        if invalid:
+            response += f"\n⚠️ Invalid: {', '.join(invalid[:30])}"
+            if len(invalid) > 30:
+                response += f" and {len(invalid) - 30} more..."
+
+        await ctx.reply(response, mention_author=False)
+
     @category_group.command(name="list")
     async def category_list(self, ctx):
         """List all categories in this server"""
@@ -382,6 +502,8 @@ class Category(commands.Cog):
     @category_create.error
     @category_edit.error
     @category_delete.error
+    @category_addpokemon.error
+    @category_removepokemon.error
     async def category_admin_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False)
@@ -436,6 +558,20 @@ class Category(commands.Cog):
     async def slash_category_delete(self, interaction: discord.Interaction, name: str):
         ctx = await commands.Context.from_interaction(interaction)
         await self.category_delete(ctx, name=name)
+
+    @cat_group.command(name="addpokemon", description="Add Pokémon to an existing category (Admin only)")
+    @app_commands.describe(name="Category name", pokemon_input="Pokémon to add, comma-separated. Supports 'furfrou all'")
+    @app_commands.default_permissions(administrator=True)
+    async def slash_category_addpokemon(self, interaction: discord.Interaction, name: str, pokemon_input: str):
+        ctx = await commands.Context.from_interaction(interaction)
+        await self.category_addpokemon(ctx, name, pokemon_input=pokemon_input)
+
+    @cat_group.command(name="removepokemon", description="Remove specific Pokémon from an existing category (Admin only)")
+    @app_commands.describe(name="Category name", pokemon_input="Pokémon to remove, comma-separated. Supports 'furfrou all'")
+    @app_commands.default_permissions(administrator=True)
+    async def slash_category_removepokemon(self, interaction: discord.Interaction, name: str, pokemon_input: str):
+        ctx = await commands.Context.from_interaction(interaction)
+        await self.category_removepokemon(ctx, name, pokemon_input=pokemon_input)
 
 
 async def setup(bot):
