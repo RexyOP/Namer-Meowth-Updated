@@ -690,3 +690,28 @@ class Database:
     async def get_secondary_model_channel(self) -> Optional[int]:
         settings = await self.db.global_settings.find_one({"_id": "secondary_model"})
         return settings.get('channel_id') if settings else None
+
+    # -------------------------------------------------------------------------
+    # Captcha channel (per guild)
+    # -------------------------------------------------------------------------
+    async def set_captcha_channel(self, guild_id: int, channel_id: Optional[int]):
+        """Set or clear the captcha alert channel for a guild."""
+        if channel_id is None:
+            await self.db.guild_settings.update_one(
+                {"guild_id": guild_id},
+                {"$unset": {"captcha_channel_id": ""}},
+                upsert=True
+            )
+        else:
+            await self.db.guild_settings.update_one(
+                {"guild_id": guild_id},
+                {"$set": {"captcha_channel_id": channel_id}},
+                upsert=True
+            )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+
+    async def get_captcha_channel(self, guild_id: int) -> Optional[int]:
+        """Get the captcha alert channel ID for a guild, or None if not set."""
+        settings = await self.db.guild_settings.find_one({"guild_id": guild_id})
+        return settings.get('captcha_channel_id') if settings else None
