@@ -15,6 +15,13 @@ from config import TOKEN, BOT_PREFIX
 def get_prefix(bot, message):
     content_lower = message.content.lower()
 
+    # Allow mentioning the bot as a prefix (e.g. @BotName help)
+    mention_prefixes = [f'<@{bot.user.id}> ', f'<@!{bot.user.id}> '] if bot.user else []
+
+    for prefix in mention_prefixes:
+        if message.content.startswith(prefix):
+            return prefix
+
     for prefix in BOT_PREFIX:
         prefix_lower = prefix.lower()
         if content_lower.startswith(prefix_lower):
