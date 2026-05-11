@@ -255,6 +255,7 @@ class Help(commands.Cog):
                     f"`{prefix}cat removepokemon <name> <pokemon>` - Remove specific Pokemon from a category\n"
                     f"**Aliases:** `{prefix}cat removepoke`\n"
                     f"**Example:** `{prefix}cat removepokemon Rares hoopa`\n\n"
+                    f"`{prefix}cat defaults` - Add an In-Built category from default list\n"
                     f"`{prefix}cat delete <name>` - Delete a category\n"
                     f"**Example:** `{prefix}cat delete Rares`"
                 ),
