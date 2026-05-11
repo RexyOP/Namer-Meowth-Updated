@@ -245,9 +245,7 @@ class Prediction:
         self.secondary_class_names = None
         self.models_initialized = False
         self.allow_auto_load = False
-        self._cdn_semaphore = asyncio.Semaphore(3)
-        self._last_cdn_request = 0
-        self._cdn_min_interval = 0.01  # was 0.1 — Discord CDN rarely rate-limits; 10ms is enough spacing
+        self._cdn_semaphore = asyncio.Semaphore(3)  # max 3 CDN downloads in-flight at once
         self._prediction_counter = 0
         self._loop = None  # cached event loop reference
 
@@ -374,26 +372,19 @@ class Prediction:
     def _generate_cache_key(self, url: str) -> str:
         return _stable_cache_key(url)
 
-    async def _rate_limit_cdn_request(self):
-        async with self._cdn_semaphore:
-            now = time.time()
-            time_since_last = now - self._last_cdn_request
-            if time_since_last < self._cdn_min_interval:
-                await asyncio.sleep(self._cdn_min_interval - time_since_last)
-            self._last_cdn_request = time.time()
-
     # ------------------------------------------------------------------
     # FIX #1: Fetch raw bytes ONCE, reuse for both model sizes
+    # Semaphore now held for the ENTIRE download, not just the pre-sleep.
+    # Previously the slot was released before the HTTP request started,
+    # meaning all concurrent downloads raced with no real cap.
     # ------------------------------------------------------------------
     async def _fetch_raw_bytes(self, url: str, session: aiohttp.ClientSession, max_retries: int = 2) -> bytes:
         """
         Download image bytes once. max_retries reduced from 4 → 2 to avoid
         long stalls on genuinely missing images (fix #3).
+        Semaphore caps concurrent CDN downloads to 3 for the full duration.
         """
         is_discord_cdn = 'cdn.discordapp.com' in url or 'media.discordapp.net' in url
-
-        if is_discord_cdn:
-            await self._rate_limit_cdn_request()
 
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -401,62 +392,71 @@ class Prediction:
             'Accept-Language': 'en-US,en;q=0.9',
         }
 
-        for attempt in range(max_retries):
-            try:
-                # Tighter timeouts — most Poketwo images are small (fix #3)
-                timeout_total = 8 + (attempt * 4)
-                timeout_connect = 4
-                timeout = aiohttp.ClientTimeout(total=timeout_total, connect=timeout_connect)
+        async def _do_fetch() -> bytes:
+            for attempt in range(max_retries):
+                try:
+                    # Tighter timeouts — most Poketwo images are small (fix #3)
+                    timeout_total = 8 + (attempt * 4)
+                    timeout_connect = 4
+                    timeout = aiohttp.ClientTimeout(total=timeout_total, connect=timeout_connect)
 
-                async with session.get(url, timeout=timeout, headers=headers) as response:
-                    if response.status == 429:
-                        retry_after = int(response.headers.get('Retry-After', 2))
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(retry_after)
-                            continue
-                        raise ValueError("Rate limited by Discord CDN")
+                    async with session.get(url, timeout=timeout, headers=headers) as response:
+                        if response.status == 429:
+                            retry_after = int(response.headers.get('Retry-After', 2))
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(retry_after)
+                                continue
+                            raise ValueError("Rate limited by Discord CDN")
 
-                    if response.status == 404:
-                        raise ValueError(f"Image not found (404): {url[:80]}")
+                        if response.status == 404:
+                            raise ValueError(f"Image not found (404): {url[:80]}")
 
-                    if response.status in [502, 503, 504]:
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(2.0 * (2 ** attempt))
-                            continue
-                        raise ValueError(f"Server error {response.status}")
+                        if response.status in [502, 503, 504]:
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(2.0 * (2 ** attempt))
+                                continue
+                            raise ValueError(f"Server error {response.status}")
 
-                    if response.status != 200:
-                        raise ValueError(f"HTTP {response.status} error")
+                        if response.status != 200:
+                            raise ValueError(f"HTTP {response.status} error")
 
-                    data = await response.read()
+                        data = await response.read()
 
-                if len(data) < 100:
-                    raise ValueError("Invalid/empty image data")
+                    if len(data) < 100:
+                        raise ValueError("Invalid/empty image data")
 
-                return data
+                    return data
 
-            except asyncio.TimeoutError:
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(1.0 * (2 ** attempt))
-                    continue
-                raise ValueError("Timeout fetching image")
+                except asyncio.TimeoutError:
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(1.0 * (2 ** attempt))
+                        continue
+                    raise ValueError("Timeout fetching image")
 
-            except aiohttp.ClientError as e:
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(1.0 * (2 ** attempt))
-                    continue
-                raise ValueError(f"Network error: {e}")
+                except aiohttp.ClientError as e:
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(1.0 * (2 ** attempt))
+                        continue
+                    raise ValueError(f"Network error: {e}")
 
-            except ValueError:
-                raise
+                except ValueError:
+                    raise
 
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(0.5 * (2 ** attempt))
-                    continue
-                raise ValueError(f"Failed to load image: {e}")
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(0.5 * (2 ** attempt))
+                        continue
+                    raise ValueError(f"Failed to load image: {e}")
 
-        raise ValueError(f"Failed to load image after {max_retries} attempts")
+            raise ValueError(f"Failed to load image after {max_retries} attempts")
+
+        # Hold the semaphore for the ENTIRE download so at most 3 CDN
+        # requests are in-flight simultaneously.  Non-CDN URLs bypass it.
+        if is_discord_cdn:
+            async with self._cdn_semaphore:
+                return await _do_fetch()
+        else:
+            return await _do_fetch()
 
     def _preprocess_from_bytes(self, raw_bytes: bytes, width: int, height: int):
         """
@@ -546,16 +546,29 @@ class Prediction:
                 self.secondary_class_names is not None
             )
 
-            if secondary_available:
+            # ── Step 1: always run primary first ────────────────────────────────
+            primary_name, primary_prob = await loop.run_in_executor(
+                None, self._run_inference, self.primary_session, primary_image, self.primary_class_names
+            )
+            del primary_image
+            primary_confidence_pct = primary_prob * 100
+
+            # ── Step 2: decide whether secondary is needed ───────────────────────
+            # Secondary runs only when:
+            #   (a) it is available, AND
+            #   (b) primary is below threshold OR the pokemon is in SECONDARY_MODEL_POKEMON
+            # For the ~94%+ confident majority this saves an entire inference call.
+            needs_secondary = secondary_available and (
+                primary_confidence_pct < PRIMARY_CONFIDENCE_THRESHOLD
+                or primary_name in SECONDARY_MODEL_POKEMON
+            )
+
+            if needs_secondary:
                 secondary_image = self._preprocess_from_bytes(raw_bytes, 224, 224)
-
-                (primary_name, primary_prob), (secondary_name, secondary_prob) = await asyncio.gather(
-                    loop.run_in_executor(None, self._run_inference, self.primary_session, primary_image, self.primary_class_names),
-                    loop.run_in_executor(None, self._run_inference, self.secondary_session, secondary_image, self.secondary_class_names),
+                secondary_name, secondary_prob = await loop.run_in_executor(
+                    None, self._run_inference, self.secondary_session, secondary_image, self.secondary_class_names
                 )
-                del primary_image, secondary_image
-
-                primary_confidence_pct   = primary_prob   * 100
+                del secondary_image
                 secondary_confidence_pct = secondary_prob * 100
 
                 # ── Pokemon-specific override ────────────────────────────────────
@@ -571,13 +584,7 @@ class Prediction:
                         self._maybe_gc()
                         return primary_name, confidence
 
-                # ── Normal threshold logic ───────────────────────────────────────
-                if primary_confidence_pct >= PRIMARY_CONFIDENCE_THRESHOLD:
-                    confidence = f"{primary_confidence_pct:.2f}%"
-                    self.cache.set(cache_key, (primary_name, confidence, "primary"))
-                    self._maybe_gc()
-                    return primary_name, confidence
-
+                # ── Normal threshold logic (primary was low-confidence) ──────────
                 if secondary_confidence_pct >= SECONDARY_CONFIDENCE_THRESHOLD:
                     confidence = f"{secondary_confidence_pct:.2f}%"
                     self.cache.set(cache_key, (secondary_name, confidence, "secondary"))
@@ -591,13 +598,10 @@ class Prediction:
                 return primary_name, confidence
 
             else:
-                # Secondary unavailable — primary only
-                primary_name, primary_prob = await loop.run_in_executor(
-                    None, self._run_inference, self.primary_session, primary_image, self.primary_class_names
-                )
-                del primary_image
-                confidence = f"{primary_prob * 100:.2f}%"
-                self.cache.set(cache_key, (primary_name, confidence, "primary_only"))
+                # Primary was confident enough (or secondary unavailable) — skip secondary entirely
+                confidence = f"{primary_confidence_pct:.2f}%"
+                label = "primary" if primary_confidence_pct >= PRIMARY_CONFIDENCE_THRESHOLD else "primary_only"
+                self.cache.set(cache_key, (primary_name, confidence, label))
                 self._maybe_gc()
                 return primary_name, confidence
 
