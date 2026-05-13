@@ -284,6 +284,9 @@ class Settings(commands.Cog):
         catch_command_enabled = settings.get('catch_command_enabled', False)
         embed.add_field(name="Catch Command Line", value="Enabled ✅" if catch_command_enabled else "Disabled ❌", inline=True)
 
+        hint_solver_enabled = settings.get('hint_solver_enabled', True)
+        embed.add_field(name="Hint Solver", value="Enabled ✅" if hint_solver_enabled else "Disabled ❌", inline=True)
+
         captcha_channel_id = settings.get('captcha_channel_id')
         captcha_val = f"<#{captcha_channel_id}>" if captcha_channel_id else "Not set (captcha alerts disabled)"
         embed.add_field(name="Captcha Alert Channel", value=captcha_val, inline=True)
@@ -317,7 +320,8 @@ class Settings(commands.Cog):
                 description=(
                     f"`{p}toggle best_name` — Toggle best-name display\n"
                     f"`{p}toggle only_pings` — Toggle only-pings mode\n"
-                    f"`{p}toggle catch_command` — Toggle catch command line in predictions"
+                    f"`{p}toggle catch_command` — Toggle catch command line in predictions\n"
+                    f"`{p}toggle hint_solver` — Toggle automatic hint solving"
                 ),
                 color=EMBED_COLOR
             )
@@ -347,9 +351,16 @@ class Settings(commands.Cog):
             status = "enabled ✅" if new_val else "disabled ❌"
             await ctx.reply(f"Catch command line is now **{status}**", mention_author=False)
 
+        elif feature == "hint_solver":
+            current = await self.db.get_hint_solver(ctx.guild.id)
+            new_val = not current
+            await self.db.set_hint_solver(ctx.guild.id, new_val)
+            status = "enabled ✅" if new_val else "disabled ❌"
+            await ctx.reply(f"Hint solver is now **{status}**", mention_author=False)
+
         else:
             await ctx.reply(
-                f"❌ Unknown feature `{feature}`. Available: `best_name`, `only_pings`, `catch_command`",
+                f"❌ Unknown feature `{feature}`. Available: `best_name`, `only_pings`, `catch_command`, `hint_solver`",
                 mention_author=False
             )
 
@@ -518,7 +529,7 @@ class Settings(commands.Cog):
         await self.only_pings_command(ctx, enabled=enabled)
 
     @app_commands.command(name="toggle-feature", description="Toggle a server feature (Admin only)")
-    @app_commands.describe(feature="Feature to toggle: 'best_name', 'only_pings', or 'catch_command'")
+    @app_commands.describe(feature="Feature to toggle: 'best_name', 'only_pings', 'catch_command', or 'hint_solver'")
     @app_commands.default_permissions(administrator=True)
     async def slash_toggle(self, interaction: discord.Interaction, feature: str):
         ctx = await commands.Context.from_interaction(interaction)
