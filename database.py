@@ -703,6 +703,24 @@ class Database:
         return settings.get('catch_command_enabled', False) if settings else False
 
     # -------------------------------------------------------------------------
+    # Hint solver toggle (per guild)
+    # -------------------------------------------------------------------------
+    async def set_hint_solver(self, guild_id: int, enabled: bool):
+        """Enable or disable the hint solver for a guild"""
+        await self.db.guild_settings.update_one(
+            {"guild_id": guild_id},
+            {"$set": {"hint_solver_enabled": enabled}},
+            upsert=True
+        )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+
+    async def get_hint_solver(self, guild_id: int) -> bool:
+        """Get hint solver setting for a guild (default: True)"""
+        settings = await self.db.guild_settings.find_one({"guild_id": guild_id})
+        return settings.get('hint_solver_enabled', True) if settings else True
+
+    # -------------------------------------------------------------------------
     # Secondary model channel
     # -------------------------------------------------------------------------
     async def set_secondary_model_channel(self, channel_id: int):
