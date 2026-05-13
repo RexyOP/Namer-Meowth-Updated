@@ -342,7 +342,7 @@ class Prediction(commands.Cog):
         if ping_data["rare_ping"]:
             lines.append(f"Rare Ping: {ping_data['rare_ping']}")
         if ping_data["regional_ping"]:
-            lines.append(f"Regional Pings: {ping_data['regional_ping']}")
+            lines.append(f"Regional Ping: {ping_data['regional_ping']}")
         if ping_data["hunters"]:
             lines.append(f"Shiny Hunters: {' '.join(ping_data['hunters'])}")
         if ping_data["collectors"]:
