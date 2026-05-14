@@ -13,7 +13,6 @@ from utils import (
     normalize_pokemon_name,
     get_pokemon_with_variants,
     is_rare_pokemon,
-    create_text_file
 )
 from config import EMBED_COLOR, ITEMS_PER_PAGE, MAX_DISPLAY_ITEMS
 
@@ -87,6 +86,78 @@ class CollectionPaginationView(discord.ui.View):
             self.previous_button.disabled = (new_page <= 1)
             self.next_button.disabled = (new_page >= self.total_pages)
             await interaction.response.edit_message(embed=embed, view=self)
+
+class RawPaginationView(discord.ui.View):
+    """Paginator for cl raw output."""
+
+    def __init__(self, user_id: int, pages: List[str], title: str, header: str):
+        super().__init__(timeout=300)
+        self.user_id = user_id
+        self.pages = pages
+        self.title = title
+        self.header = header
+        self.current_page = 1
+        self.total_pages = len(pages)
+        self._update_buttons()
+
+    def _update_buttons(self):
+        self.previous_button.disabled = (self.current_page <= 1)
+        self.next_button.disabled = (self.current_page >= self.total_pages)
+
+    def build_embed(self, page: int) -> discord.Embed:
+        embed = discord.Embed(
+            title=self.title,
+            description=f"{self.header}\n{self.pages[page - 1]}",
+            color=EMBED_COLOR
+        )
+        embed.set_footer(text=f"Page {page}/{self.total_pages}")
+        return embed
+
+    @discord.ui.button(label="", emoji="\u25c0\ufe0f", style=discord.ButtonStyle.primary)
+    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This button is not for you!", ephemeral=True)
+            return
+        self.current_page = max(1, self.current_page - 1)
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self.build_embed(self.current_page), view=self)
+
+    @discord.ui.button(label="", emoji="\u25b6\ufe0f", style=discord.ButtonStyle.primary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This button is not for you!", ephemeral=True)
+            return
+        self.current_page = min(self.total_pages, self.current_page + 1)
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self.build_embed(self.current_page), view=self)
+
+
+def _paginate_raw_text(text_content: str, max_chars: int = 3800) -> List[str]:
+    """Split SR-grouped raw text into embed-sized pages.
+
+    Never splits a tier line across pages. If a single tier line exceeds
+    max_chars it goes on its own page.
+    """
+    tier_lines = text_content.split("\n\n")
+    pages: List[str] = []
+    current_chunks: List[str] = []
+    current_len = 0
+
+    for line in tier_lines:
+        needed = len(line) + (2 if current_chunks else 0)  # +2 for \n\n separator
+        if current_chunks and current_len + needed > max_chars:
+            pages.append("\n\n".join(current_chunks))
+            current_chunks = [line]
+            current_len = len(line)
+        else:
+            current_chunks.append(line)
+            current_len += needed
+
+    if current_chunks:
+        pages.append("\n\n".join(current_chunks))
+
+    return pages
+
 
 class Collection(commands.Cog):
     """Collection management commands"""
@@ -513,39 +584,33 @@ class Collection(commands.Cog):
                 await ctx.reply("Your collection is empty!", mention_author=False)
             return
 
-        # Title reflects filter state
+        # Title / header reflect filter state
         if sr_filter:
             sr_label = ", ".join(f"1/{s}" for s in sr_filter)
-            # Count only the matched pokemon
             matched_names = set()
             for sr in sr_filter:
                 for name in (self.spawnrate_data.get(sr) or []):
                     matched_names.add(name.lower())
             shown = sum(1 for p in collection if p.lower() in matched_names)
             title = f"📦 Collection — SR {sr_label}"
-            description_prefix = f"**{shown} Pokémon (SR {sr_label}):**\n"
-            file_desc = f"{shown} Pokémon with SR {sr_label}."
+            header = f"**{shown} Pokémon (SR {sr_label}):**"
         else:
             title = "📦 Your Collection"
-            description_prefix = f"**{total} Pokémon:**\n"
-            file_desc = f"Your collection has {total} Pokémon."
+            header = f"**{total} Pokémon:**"
 
-        # Send as file if too long, otherwise embed
-        if len(description_prefix) + len(text_content) > 1900:
-            file = create_text_file(text_content, f"collection_{ctx.author.id}.txt")
+        # Paginate and send
+        pages = _paginate_raw_text(text_content)
+
+        if len(pages) == 1:
             embed = discord.Embed(
                 title=title,
-                description=file_desc + " View the attached file for the full list.",
-                color=EMBED_COLOR
-            )
-            await ctx.reply(embed=embed, file=file, mention_author=False)
-        else:
-            embed = discord.Embed(
-                title=title,
-                description=description_prefix + text_content,
+                description=f"{header}\n{pages[0]}",
                 color=EMBED_COLOR
             )
             await ctx.reply(embed=embed, mention_author=False)
+        else:
+            view = RawPaginationView(ctx.author.id, pages, title, header)
+            await ctx.reply(embed=view.build_embed(1), view=view, mention_author=False)
 
     # ------------------------------------------------------------------
     # Slash Commands  (registered automatically with the cog)
