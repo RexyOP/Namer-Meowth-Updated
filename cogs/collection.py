@@ -49,12 +49,13 @@ def load_spawnrate_data() -> Dict[int, List[str]]:
 
 class CollectionPaginationView(discord.ui.View):
     def __init__(self, user_id, guild_id, current_page, total_pages, cog):
-        super().__init__(timeout=300)
+        super().__init__(timeout=60)  # reduced from 300
         self.user_id = user_id
         self.guild_id = guild_id
         self.current_page = current_page
         self.total_pages = total_pages
         self.cog = cog
+        self.message: discord.Message | None = None
 
         self.previous_button.disabled = (current_page <= 1)
         self.next_button.disabled = (current_page >= total_pages)
@@ -89,17 +90,28 @@ class CollectionPaginationView(discord.ui.View):
             self.next_button.disabled = (new_page >= self.total_pages)
             await interaction.response.edit_message(embed=embed, view=self)
 
+    async def on_timeout(self):
+        self.clear_items()
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+        self.message = None
+        self.cog = None
+
 class RawPaginationView(discord.ui.View):
     """Paginator for cl raw output."""
 
     def __init__(self, user_id: int, pages: List[str], title: str, header: str):
-        super().__init__(timeout=300)
+        super().__init__(timeout=60)  # reduced from 300
         self.user_id = user_id
         self.pages = pages
         self.title = title
         self.header = header
         self.current_page = 1
         self.total_pages = len(pages)
+        self.message: discord.Message | None = None
         self._update_buttons()
 
     def _update_buttons(self):
@@ -132,6 +144,15 @@ class RawPaginationView(discord.ui.View):
         self.current_page = min(self.total_pages, self.current_page + 1)
         self._update_buttons()
         await interaction.response.edit_message(embed=self.build_embed(self.current_page), view=self)
+
+    async def on_timeout(self):
+        self.clear_items()
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+        self.message = None
 
 
 def _paginate_raw_text(text_content: str, max_chars: int = 3800) -> List[str]:
@@ -494,7 +515,8 @@ class Collection(commands.Cog):
 
             if total_pages > 1:
                 view = CollectionPaginationView(ctx.author.id, ctx.guild.id, 1, total_pages, self)
-                await ctx.reply(embed=embed, view=view, mention_author=False)
+                msg = await ctx.reply(embed=embed, view=view, mention_author=False)
+                view.message = msg
             else:
                 await ctx.reply(embed=embed, mention_author=False)
         else:
@@ -646,7 +668,8 @@ class Collection(commands.Cog):
             await ctx.reply(embed=embed, mention_author=False)
         else:
             view = RawPaginationView(ctx.author.id, pages, title, header)
-            await ctx.reply(embed=view.build_embed(1), view=view, mention_author=False)
+            msg = await ctx.reply(embed=view.build_embed(1), view=view, mention_author=False)
+            view.message = msg
 
     # ------------------------------------------------------------------
     # Slash Commands  (registered automatically with the cog)
