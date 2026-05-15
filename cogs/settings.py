@@ -11,9 +11,10 @@ class AFKView(discord.ui.View):
     """AFK toggle buttons (global)"""
 
     def __init__(self, user_id, collection_afk, shiny_hunt_afk, type_ping_afk, region_ping_afk, cog):
-        super().__init__(timeout=300)
+        super().__init__(timeout=60)  # reduced from 300
         self.user_id = user_id
         self.cog = cog
+        self.message: discord.Message | None = None
         self.update_buttons(collection_afk, shiny_hunt_afk, type_ping_afk, region_ping_afk)
 
     def update_buttons(self, collection_afk, shiny_hunt_afk, type_ping_afk, region_ping_afk):
@@ -106,6 +107,16 @@ class AFKView(discord.ui.View):
         new_type = await self.cog.db.is_type_ping_afk(self.user_id)
         self.update_buttons(new_col, new_shy, new_type, new_rgn)
         await interaction.response.edit_message(embed=self._create_embed(new_col, new_shy, new_type, new_rgn), view=self)
+
+    async def on_timeout(self):
+        self.clear_items()
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+        self.message = None
+        self.cog = None
 
 
 
@@ -210,7 +221,8 @@ class Settings(commands.Cog):
         )
 
         view = AFKView(ctx.author.id, col_afk, shy_afk, type_afk, rgn_afk, self)
-        await ctx.reply(embed=embed, view=view, mention_author=False)
+        msg = await ctx.reply(embed=embed, view=view, mention_author=False)
+        view.message = msg
 
     # ------------------------------------------------------------------
     # Server role settings (admin only)
