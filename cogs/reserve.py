@@ -25,10 +25,11 @@ REPLY_EMOJI = "<:reply:1503236369126916117>"
 # ---------------------------------------------------------------------------
 class ReserveListView(discord.ui.View):
     def __init__(self, author_id: int, pages: list[discord.Embed]):
-        super().__init__(timeout=300)
+        super().__init__(timeout=60)  # reduced from 300
         self.author_id = author_id
         self.pages = pages
         self.current = 0
+        self.message: discord.Message | None = None
         self._update_buttons()
 
     def _update_buttons(self):
@@ -66,6 +67,15 @@ class ReserveListView(discord.ui.View):
         await interaction.response.edit_message(
             embed=self.pages[self.current], view=self
         )
+
+    async def on_timeout(self):
+        self.clear_items()
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+        self.message = None
 
 
 # ---------------------------------------------------------------------------
@@ -708,7 +718,8 @@ class Reserve(commands.Cog):
             await ctx.reply(embed=pages[0], mention_author=False)
         else:
             view = ReserveListView(ctx.author.id, pages)
-            await ctx.reply(embed=pages[0], view=view, mention_author=False)
+            msg = await ctx.reply(embed=pages[0], view=view, mention_author=False)
+            view.message = msg
 
     # ------------------------------------------------------------------
     # p!reserve allowedroles  (subgroup)
