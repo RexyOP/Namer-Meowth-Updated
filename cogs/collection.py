@@ -153,6 +153,7 @@ class RawPaginationView(discord.ui.View):
             except discord.HTTPException:
                 pass
         self.message = None
+        self.pages = []  # release text page strings from memory
 
 
 def _paginate_raw_text(text_content: str, max_chars: int = 3800) -> List[str]:
