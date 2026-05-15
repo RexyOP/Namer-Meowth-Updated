@@ -18,13 +18,13 @@ from default_cats import DEFAULT_CATEGORIES
 # ---------------------------------------------------------------------------
 class CategoryPaginationView(discord.ui.View):
     def __init__(self, user_id, category_name, pokemon_list, current_page, total_pages):
-        super().__init__(timeout=60)  # Reduced from 300s → 60s
+        super().__init__(timeout=60)
         self.user_id = user_id
         self.category_name = category_name
         self.pokemon_list = pokemon_list
         self.current_page = current_page
         self.total_pages = total_pages
-        self.message = None  # Store message ref for cleanup
+        self.message = None
 
         self.previous_button.disabled = (current_page <= 1)
         self.next_button.disabled = (current_page >= total_pages)
@@ -48,14 +48,14 @@ class CategoryPaginationView(discord.ui.View):
         return embed
 
     async def on_timeout(self):
-        """Clean up message and references when view times out"""
-        try:
-            if self.message:
-                await self.message.edit(view=None)
-        except Exception:
-            pass
         self.clear_items()
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
         self.message = None
+        self.pokemon_list = []
 
     @discord.ui.button(label="", emoji="◀️", style=discord.ButtonStyle.primary)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -91,11 +91,11 @@ class DefaultCategoryListView(discord.ui.View):
     """
 
     def __init__(self, cog: "Category", ctx: commands.Context, existing_names: set[str]):
-        super().__init__(timeout=60)  # Reduced from 180s → 60s
+        super().__init__(timeout=60)
         self.cog = cog
         self.ctx = ctx
-        self.existing_names = existing_names  # category labels already on this guild
-        self.message = None  # Store message ref for cleanup
+        self.existing_names = existing_names
+        self.message = None
 
         for key, meta in DEFAULT_CATEGORIES.items():
             label = meta["label"]
@@ -115,7 +115,6 @@ class DefaultCategoryListView(discord.ui.View):
             if interaction.user.id != self.ctx.author.id:
                 await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
                 return
-            # Hand off to the preview stage — edits this same message
             preview = DefaultCategoryPreviewView(
                 cog=self.cog,
                 ctx=self.ctx,
@@ -129,18 +128,16 @@ class DefaultCategoryListView(discord.ui.View):
         return callback
 
     async def on_timeout(self):
-        """Clean up message and references when view times out"""
-        try:
-            if self.message:
-                await self.message.edit(view=None)
-        except Exception:
-            pass
         self.clear_items()
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
         self.message = None
         self.cog = None
         self.ctx = None
 
-    # ------------------------------------------------------------------
     @staticmethod
     def build_list_embed(existing_names: set[str]) -> discord.Embed:
         lines = []
@@ -164,7 +161,7 @@ class DefaultCategoryListView(discord.ui.View):
         existing_names = {c["name"] for c in guild_cats}
         view = cls(cog, ctx, existing_names)
         message = await ctx.reply(embed=cls.build_list_embed(existing_names), view=view, mention_author=False)
-        view.message = message  # Store message ref after send
+        view.message = message
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +184,7 @@ class DefaultCategoryPreviewView(discord.ui.View):
         key: str,
         existing_names: set[str],
     ):
-        super().__init__(timeout=60)  # Reduced from 180s → 60s
+        super().__init__(timeout=60)
         self.cog = cog
         self.ctx = ctx
         self.key = key
@@ -197,110 +194,158 @@ class DefaultCategoryPreviewView(discord.ui.View):
         self.total_pages = max(1, math.ceil(len(self.pokemon) / DEFAULTS_PREVIEW_PAGE_SIZE))
         self.current_page = 1
         self.is_override = self.meta["label"] in existing_names
-        self.message = None  # Store message ref for cleanup
 
-        self._update_nav_buttons()
-        self._update_confirm_button()
+        self._refresh_buttons()
 
-    def _update_nav_buttons(self):
-        """Update prev/next button disabled states"""
-        self.prev_page_btn.disabled = self.current_page <= 1
-        self.next_page_btn.disabled = self.current_page >= self.total_pages
+    def _refresh_buttons(self):
+        self.clear_items()
 
-    def _update_confirm_button(self):
-        """Update Add/Override button label and style"""
-        label = f"⚠️ Override '{self.meta['label']}'" if self.is_override else f"➕ Add '{self.meta['label']}'"
-        style = discord.ButtonStyle.danger if self.is_override else discord.ButtonStyle.success
-        self.confirm_btn.label = label
-        self.confirm_btn.style = style
+        # Row 0 — pagination
+        self.prev_page_btn = discord.ui.Button(
+            emoji="◀️",
+            style=discord.ButtonStyle.secondary,
+            disabled=self.current_page <= 1,
+            row=0,
+        )
+        self.prev_page_btn.callback = self._prev_page
+
+        self.page_counter_btn = discord.ui.Button(
+            label=f"{self.current_page} / {self.total_pages}",
+            style=discord.ButtonStyle.secondary,
+            disabled=True,
+            row=0,
+        )
+
+        self.next_page_btn = discord.ui.Button(
+            emoji="▶️",
+            style=discord.ButtonStyle.secondary,
+            disabled=self.current_page >= self.total_pages,
+            row=0,
+        )
+        self.next_page_btn.callback = self._next_page
+
+        self.add_item(self.prev_page_btn)
+        self.add_item(self.page_counter_btn)
+        self.add_item(self.next_page_btn)
+
+        # Row 1 — back + confirm
+        back_btn = discord.ui.Button(
+            label="← Back",
+            style=discord.ButtonStyle.secondary,
+            row=1,
+        )
+        back_btn.callback = self._go_back
+
+        confirm_label = (
+            f"⚠️ Override {self.meta['label']}"
+            if self.is_override
+            else f"✅ Add {self.meta['label']}"
+        )
+        confirm_btn = discord.ui.Button(
+            label=confirm_label,
+            style=discord.ButtonStyle.danger if self.is_override else discord.ButtonStyle.success,
+            row=1,
+        )
+        confirm_btn.callback = self._confirm
+
+        self.add_item(back_btn)
+        self.add_item(confirm_btn)
 
     def build_embed(self, page: int) -> discord.Embed:
         start = (page - 1) * DEFAULTS_PREVIEW_PAGE_SIZE
         end = start + DEFAULTS_PREVIEW_PAGE_SIZE
-        page_pokemon = self.pokemon[start:end]
+        chunk = self.pokemon[start:end]
+
+        warn = (
+            f"\n> ⚠️ **This server already has a `{self.meta['label']}` category. "
+            f"Adding will override it.**\n"
+            if self.is_override
+            else ""
+        )
 
         embed = discord.Embed(
-            title=f"{self.meta['emoji']} {self.meta['label']}",
-            description="\n".join([f"• {p}" for p in page_pokemon]),
+            title=f"{self.meta['emoji']} {self.meta['label']} — Preview",
+            description=warn + "\n".join(f"• {p}" for p in chunk),
             color=EMBED_COLOR,
         )
         embed.set_footer(
-            text=f"Page {page}/{self.total_pages} • {len(self.pokemon)} Pokémon total"
+            text=(
+                f"{len(self.pokemon)} Pokémon total • "
+                f"Page {page}/{self.total_pages} • "
+                f"{self.meta['description']}"
+            )
         )
         return embed
 
     async def on_timeout(self):
-        """Clean up references when view times out"""
-        try:
-            if self.message:
-                await self.message.edit(view=None)
-        except Exception:
-            pass
         self.clear_items()
-        self.message = None
         self.cog = None
         self.ctx = None
 
-    @discord.ui.button(label="", emoji="◀️", style=discord.ButtonStyle.primary, row=0)
-    async def prev_page_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.ctx.author.id:
             await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
-            return
-        if self.current_page > 1:
-            self.current_page -= 1
-            self._update_nav_buttons()
-            await interaction.response.edit_message(embed=self.build_embed(self.current_page), view=self)
+            return False
+        return True
 
-    @discord.ui.button(label="", emoji="▶️", style=discord.ButtonStyle.primary, row=0)
-    async def next_page_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.ctx.author.id:
-            await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
+    async def _prev_page(self, interaction: discord.Interaction):
+        if not await self._check(interaction):
             return
-        if self.current_page < self.total_pages:
-            self.current_page += 1
-            self._update_nav_buttons()
-            await interaction.response.edit_message(embed=self.build_embed(self.current_page), view=self)
+        self.current_page = max(1, self.current_page - 1)
+        self._refresh_buttons()
+        await interaction.response.edit_message(embed=self.build_embed(self.current_page), view=self)
 
-    @discord.ui.button(label="← Back", style=discord.ButtonStyle.secondary, row=1)
-    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.ctx.author.id:
-            await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
+    async def _next_page(self, interaction: discord.Interaction):
+        if not await self._check(interaction):
             return
-        # Go back to list view
-        view = DefaultCategoryListView(self.cog, self.ctx, self.existing_names)
+        self.current_page = min(self.total_pages, self.current_page + 1)
+        self._refresh_buttons()
+        await interaction.response.edit_message(embed=self.build_embed(self.current_page), view=self)
+
+    async def _go_back(self, interaction: discord.Interaction):
+        if not await self._check(interaction):
+            return
+        guild_cats = await self.cog.db.get_all_categories(interaction.guild.id)
+        existing_names = {c["name"] for c in guild_cats}
+        list_view = DefaultCategoryListView(self.cog, self.ctx, existing_names)
         await interaction.response.edit_message(
-            embed=DefaultCategoryListView.build_list_embed(self.existing_names),
-            view=view,
+            embed=DefaultCategoryListView.build_list_embed(existing_names),
+            view=list_view,
         )
 
-    @discord.ui.button(label="", emoji="➕", style=discord.ButtonStyle.success, row=1)
-    async def confirm_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.ctx.author.id:
-            await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
+    async def _confirm(self, interaction: discord.Interaction):
+        if not await self._check(interaction):
             return
 
-        label = self.meta["label"]
-        pokemon_list = self.meta["pokemon"]
+        meta = self.meta
+        cat_name = meta["label"]
+        pokemon = meta["pokemon"]
 
-        try:
-            existing = await self.cog.db.get_category(interaction.guild.id, label)
-            if existing:
-                # Override — replace Pokémon list
-                await self.cog.db.update_category(interaction.guild.id, label, pokemon_list)
-                msg = f"✅ **{label}** category updated with {len(pokemon_list)} Pokémon"
-            else:
-                # New — create category
-                await self.cog.db.create_category(interaction.guild.id, label, pokemon_list)
-                msg = f"✅ **{label}** category added with {len(pokemon_list)} Pokémon"
-            await interaction.response.edit_message(content=msg, embed=None, view=None)
-        except Exception as e:
-            await interaction.response.edit_message(
-                content=f"❌ Error: {e}",
-                embed=None,
-                view=None,
-            )
+        existing = await self.cog.db.get_category(interaction.guild.id, cat_name)
+        if existing:
+            await self.cog.db.update_category(interaction.guild.id, cat_name, pokemon)
+            verb = "overridden"
+        else:
+            await self.cog.db.create_category(interaction.guild.id, cat_name, pokemon)
+            verb = "added"
+
+        guild_cats = await self.cog.db.get_all_categories(interaction.guild.id)
+        existing_names = {c["name"] for c in guild_cats}
+        list_view = DefaultCategoryListView(self.cog, self.ctx, existing_names)
+
+        await interaction.response.edit_message(
+            embed=DefaultCategoryListView.build_list_embed(existing_names),
+            view=list_view,
+        )
+        await interaction.followup.send(
+            f"✅ **{cat_name}** ({len(pokemon)} Pokémon) {verb} successfully.",
+            ephemeral=True,
+        )
 
 
+# ---------------------------------------------------------------------------
+# Category Cog
+# ---------------------------------------------------------------------------
 class Category(commands.Cog):
     """Category management for bulk collection operations"""
 
@@ -310,300 +355,328 @@ class Category(commands.Cog):
 
     @property
     def db(self):
-        """Get database from bot"""
         return self.bot.db
 
-    # ------------------------------------------------------------------
-    # Group definition
-    # ------------------------------------------------------------------
-    @commands.group(name="cat", invoke_without_command=True)
-    async def category_group(self, ctx):
-        """Manage categories for bulk collection operations
-        Subcommands: create, add, remove, delete, edit, defaults, list, info
+    def parse_pokemon_input(self, input_string: str) -> List[str]:
+        """Parse pokemon input and return list of pokemon names.
+
+        Handles:
+        - Single pokemon: "pikachu"
+        - Multiple pokemon: "pikachu, charizard, mewtwo"
+        - All variants: "furfrou all", "arceus all", "all furfrou", "all arceus"
         """
-        if ctx.invoked_subcommand is not None:
-            return
+        parts = [p.strip() for p in input_string.split(",") if p.strip()]
+        all_pokemon = []
+        invalid = []
 
-        await ctx.send_help(self.category_group)
+        for part in parts:
+            part_lower = part.lower()
+            is_all = part_lower.endswith(" all") or part_lower.startswith("all ")
+
+            if is_all:
+                if part_lower.startswith("all "):
+                    base_name = part[4:].strip()
+                else:
+                    base_name = part[:-4].strip()
+                variants = get_pokemon_with_variants(base_name, self.pokemon_data)
+                if variants:
+                    all_pokemon.extend(variants)
+                else:
+                    invalid.append(part)
+            else:
+                pokemon = find_pokemon_by_name_flexible(part, self.pokemon_data)
+                if pokemon and pokemon.get("name"):
+                    all_pokemon.append(pokemon["name"])
+                else:
+                    invalid.append(part)
+
+        return all_pokemon, invalid
 
     # ------------------------------------------------------------------
-    # Create
+    # Command group
+    # ------------------------------------------------------------------
+    @commands.group(name="category", aliases=["cat"], invoke_without_command=True)
+    async def category_group(self, ctx):
+        """Category management commands"""
+        if ctx.invoked_subcommand is None:
+            await ctx.reply(
+                "Usage: `p!cat [create/edit/delete]` or `p!cat [add/remove/list/info]` "
+                "or `p!cat [addpokemon/removepokemon]` or `p!cat defaults`",
+                mention_author=False,
+            )
+
+    # ------------------------------------------------------------------
+    # p!cat defaults
+    # ------------------------------------------------------------------
+    @category_group.command(name="defaults", aliases=["default", "builtin"])
+    @commands.has_permissions(administrator=True)
+    async def category_defaults(self, ctx):
+        """Browse built-in categories and add them to this server (Admin only)."""
+        await DefaultCategoryListView.send(cog=self, ctx=ctx)
+
+    # ------------------------------------------------------------------
+    # Admin CRUD
     # ------------------------------------------------------------------
     @category_group.command(name="create")
     @commands.has_permissions(administrator=True)
-    async def category_create(self, ctx, name: str, *, pokemon_input: str = None):
-        """Create a new category and add Pokémon to it
+    async def category_create(self, ctx, name: str, *, pokemon_input: str):
+        """Create a new category (Admin only)
 
         Examples:
-            p!cat create Legendaries Zapdos, Articuno, Moltres
-            p!cat create Mythicals arceus all
+            p!cat create Rares articuno, moltres, zapdos
+            p!cat create Furfrou furfrou all
         """
-        if not pokemon_input:
-            await ctx.reply("❌ Please provide at least one Pokémon", mention_author=False)
+        pokemon_list, invalid = self.parse_pokemon_input(pokemon_input)
+
+        if not pokemon_list:
+            error_msg = "No valid Pokémon found to add to category"
+            if invalid:
+                error_msg += f". Invalid: {', '.join(invalid[:10])}"
+            await ctx.reply(error_msg, mention_author=False)
             return
 
-        # Check if category already exists
         existing = await self.db.get_category(ctx.guild.id, name)
         if existing:
-            await ctx.reply(f"❌ Category `{name}` already exists", mention_author=False)
+            await ctx.reply(
+                f"❌ Category `{name}` already exists. Use `p!cat edit` to modify it.",
+                mention_author=False,
+            )
             return
 
-        pokemon_to_add = []
-        invalid = []
+        await self.db.create_category(ctx.guild.id, name, pokemon_list)
 
-        # Check if using "all" keyword
-        if pokemon_input.strip().lower().endswith(" all"):
-            base_name = pokemon_input[:-4].strip()
-            variants = get_pokemon_with_variants(base_name, self.pokemon_data)
-            if not variants:
-                await ctx.reply(f"❌ Invalid Pokémon name: {base_name}", mention_author=False)
-                return
-            pokemon_to_add = variants
-        else:
-            # Parse comma-separated Pokémon names
-            names = [n.strip() for n in pokemon_input.split(",") if n.strip()]
-            for pokemon_name in names:
-                pokemon = find_pokemon_by_name_flexible(pokemon_name, self.pokemon_data)
-                if pokemon and pokemon.get("name"):
-                    pokemon_to_add.append(pokemon["name"])
-                else:
-                    invalid.append(pokemon_name)
-
-        if not pokemon_to_add:
-            response = "❌ No valid Pokémon provided"
-            if invalid:
-                response += f": {', '.join(invalid[:10])}"
-            await ctx.reply(response, mention_author=False)
-            return
-
-        # Create category
-        await self.db.create_category(ctx.guild.id, name, pokemon_to_add)
-
-        response = f"✅ Created category `{name}` with {len(pokemon_to_add)} Pokémon"
+        response = f"✅ Created category `{name}` with {len(pokemon_list)} Pokémon"
         if invalid:
-            response += f"\n> ⚠️ Invalid: {', '.join(invalid[:10])}"
-            if len(invalid) > 10:
-                response += f" and {len(invalid) - 10} more"
-        await ctx.reply(response, mention_author=False)
-
-    # ------------------------------------------------------------------
-    # Edit
-    # ------------------------------------------------------------------
-    @category_group.command(name="edit")
-    @commands.has_permissions(administrator=True)
-    async def category_edit(self, ctx, name: str, *, pokemon_input: str = None):
-        """Replace all Pokémon in an existing category
-
-        Examples:
-            p!cat edit Legendaries Zapdos, Articuno, Moltres, Terrakion
-        """
-        if not pokemon_input:
-            await ctx.reply("❌ Please provide at least one Pokémon", mention_author=False)
-            return
-
-        existing = await self.db.get_category(ctx.guild.id, name)
-        if not existing:
-            await ctx.reply(f"❌ Category `{name}` does not exist", mention_author=False)
-            return
-
-        pokemon_to_add = []
-        invalid = []
-
-        # Check if using "all" keyword
-        if pokemon_input.strip().lower().endswith(" all"):
-            base_name = pokemon_input[:-4].strip()
-            variants = get_pokemon_with_variants(base_name, self.pokemon_data)
-            if not variants:
-                await ctx.reply(f"❌ Invalid Pokémon name: {base_name}", mention_author=False)
-                return
-            pokemon_to_add = variants
-        else:
-            # Parse comma-separated Pokémon names
-            names = [n.strip() for n in pokemon_input.split(",") if n.strip()]
-            for pokemon_name in names:
-                pokemon = find_pokemon_by_name_flexible(pokemon_name, self.pokemon_data)
-                if pokemon and pokemon.get("name"):
-                    pokemon_to_add.append(pokemon["name"])
-                else:
-                    invalid.append(pokemon_name)
-
-        if not pokemon_to_add:
-            response = "❌ No valid Pokémon provided"
-            if invalid:
-                response += f": {', '.join(invalid[:10])}"
-            await ctx.reply(response, mention_author=False)
-            return
-
-        # Update category
-        await self.db.update_category(ctx.guild.id, name, pokemon_to_add)
-
-        response = f"✅ Updated `{name}` with {len(pokemon_to_add)} Pokémon"
-        if invalid:
-            response += f"\n> ⚠️ Invalid: {', '.join(invalid[:10])}"
-            if len(invalid) > 10:
-                response += f" and {len(invalid) - 10} more"
-        await ctx.reply(response, mention_author=False)
-
-    # ------------------------------------------------------------------
-    # Delete
-    # ------------------------------------------------------------------
-    @category_group.command(name="delete")
-    @commands.has_permissions(administrator=True)
-    async def category_delete(self, ctx, *, name: str):
-        """Delete a category
-
-        Examples:
-            p!cat delete Legendaries
-        """
-        existing = await self.db.get_category(ctx.guild.id, name)
-        if not existing:
-            await ctx.reply(f"❌ Category `{name}` does not exist", mention_author=False)
-            return
-
-        count = len(existing.get("pokemon", []))
-        await self.db.delete_category(ctx.guild.id, name)
-        await ctx.reply(f"✅ Deleted category `{name}` ({count} Pokémon)", mention_author=False)
-
-    # ------------------------------------------------------------------
-    # Defaults
-    # ------------------------------------------------------------------
-    @category_group.command(name="defaults")
-    @commands.has_permissions(administrator=True)
-    async def category_defaults(self, ctx):
-        """Browse and add built-in categories to this server"""
-        await DefaultCategoryListView.send(self, ctx)
-
-    # ------------------------------------------------------------------
-    # Add Pokémon to category
-    # ------------------------------------------------------------------
-    @category_group.command(name="addpokemon")
-    @commands.has_permissions(administrator=True)
-    async def category_addpokemon(self, ctx, name: str, *, pokemon_input: str = None):
-        """Add Pokémon to an existing category
-
-        Examples:
-            p!cat addpokemon Legendaries Xerneas, Yveltal
-            p!cat addpokemon Mythicals arceus all
-        """
-        if not pokemon_input:
-            await ctx.reply("❌ Please provide at least one Pokémon", mention_author=False)
-            return
-
-        existing = await self.db.get_category(ctx.guild.id, name)
-        if not existing:
-            await ctx.reply(f"❌ Category `{name}` does not exist", mention_author=False)
-            return
-
-        pokemon_to_add = []
-        invalid = []
-        already_added = []
-
-        existing_pokemon = set(existing.get("pokemon", []))
-
-        # Check if using "all" keyword
-        if pokemon_input.strip().lower().endswith(" all"):
-            base_name = pokemon_input[:-4].strip()
-            variants = get_pokemon_with_variants(base_name, self.pokemon_data)
-            if not variants:
-                await ctx.reply(f"❌ Invalid Pokémon name: {base_name}", mention_author=False)
-                return
-            for p in variants:
-                if p not in existing_pokemon:
-                    pokemon_to_add.append(p)
-                else:
-                    already_added.append(p)
-        else:
-            # Parse comma-separated Pokémon names
-            names = [n.strip() for n in pokemon_input.split(",") if n.strip()]
-            for pokemon_name in names:
-                pokemon = find_pokemon_by_name_flexible(pokemon_name, self.pokemon_data)
-                if pokemon and pokemon.get("name"):
-                    if pokemon["name"] not in existing_pokemon:
-                        pokemon_to_add.append(pokemon["name"])
-                    else:
-                        already_added.append(pokemon["name"])
-                else:
-                    invalid.append(pokemon_name)
-
-        if not pokemon_to_add:
-            response = "❌ No new Pokémon to add"
-            if already_added:
-                response += f"\n> {len(already_added)} already in category: {', '.join(already_added[:10])}"
-            if invalid:
-                response += f"\n> ⚠️ Invalid: {', '.join(invalid[:10])}"
-            await ctx.reply(response, mention_author=False)
-            return
-
-        # Update category
-        updated = existing_pokemon | set(pokemon_to_add)
-        await self.db.update_category(ctx.guild.id, name, list(updated))
-
-        response = f"✅ Added {len(pokemon_to_add)} Pokémon to `{name}`"
-        if len(pokemon_to_add) <= 20:
-            response += f": {', '.join(pokemon_to_add)}"
-        else:
-            response += f": {', '.join(pokemon_to_add[:20])} and {len(pokemon_to_add) - 20} more"
-
-        if already_added:
-            response += f"\n> {len(already_added)} already in category (skipped)"
-        if invalid:
-            response += f"\n> ⚠️ Invalid: {', '.join(invalid[:30])}"
+            response += f"\n⚠️ Invalid: {', '.join(invalid[:30])}"
             if len(invalid) > 30:
                 response += f" and {len(invalid) - 30} more..."
         await ctx.reply(response, mention_author=False)
 
-    # ------------------------------------------------------------------
-    # Remove Pokémon from category
-    # ------------------------------------------------------------------
-    @category_group.command(name="removepokemon")
+    @category_group.command(name="edit")
     @commands.has_permissions(administrator=True)
-    async def category_removepokemon(self, ctx, name: str, *, pokemon_input: str = None):
-        """Remove Pokémon from an existing category
+    async def category_edit(self, ctx, name: str, *, pokemon_input: str):
+        """Edit an existing category (Admin only) — replaces the entire list.
 
         Examples:
-            p!cat removepokemon Legendaries Xerneas, Yveltal
+            p!cat edit Rares marshadow, lugia, moltres all
         """
-        if not pokemon_input:
-            await ctx.reply("❌ Please provide at least one Pokémon", mention_author=False)
-            return
-
         existing = await self.db.get_category(ctx.guild.id, name)
         if not existing:
-            await ctx.reply(f"❌ Category `{name}` does not exist", mention_author=False)
+            await ctx.reply(
+                f"❌ Category `{name}` does not exist. Use `p!cat create` to create it.",
+                mention_author=False,
+            )
             return
 
-        to_remove = []
-        invalid = []
-        not_in_category = []
+        pokemon_list, invalid = self.parse_pokemon_input(pokemon_input)
+
+        if not pokemon_list:
+            error_msg = "No valid Pokémon found to add to category"
+            if invalid:
+                error_msg += f". Invalid: {', '.join(invalid[:10])}"
+            await ctx.reply(error_msg, mention_author=False)
+            return
+
+        await self.db.update_category(ctx.guild.id, name, pokemon_list)
+
+        response = f"✅ Updated category `{name}` with {len(pokemon_list)} Pokémon"
+        if invalid:
+            response += f"\n⚠️ Invalid: {', '.join(invalid[:30])}"
+            if len(invalid) > 30:
+                response += f" and {len(invalid) - 30} more..."
+        await ctx.reply(response, mention_author=False)
+
+    @category_group.command(name="delete")
+    @commands.has_permissions(administrator=True)
+    async def category_delete(self, ctx, *, name: str):
+        """Delete a category (Admin only)
+
+        Examples:
+            p!cat delete Rares
+        """
+        deleted = await self.db.delete_category(ctx.guild.id, name)
+        if deleted:
+            await ctx.reply(f"✅ Deleted category `{name}`", mention_author=False)
+        else:
+            await ctx.reply(f"❌ Category `{name}` does not exist", mention_author=False)
+
+    # ------------------------------------------------------------------
+    # User commands (add/remove from collection)
+    # ------------------------------------------------------------------
+    @category_group.command(name="add")
+    async def category_add(self, ctx, *, category_names: str):
+        """Add Pokémon from categories to your collection
+
+        Examples:
+            p!cat add Rares
+            p!cat add Rares, Regionals, Gigantamax
+        """
+        names_list = list(dict.fromkeys(
+            name.strip() for name in category_names.split(",") if name.strip()
+        ))
+
+        if not names_list:
+            await ctx.reply("No category names provided", mention_author=False)
+            return
+
+        total_added = 0
+        category_results = []
+        not_found = []
+
+        for cat_name in names_list:
+            category = await self.db.get_category(ctx.guild.id, cat_name)
+            if category:
+                pokemon_list = category.get("pokemon", [])
+                if pokemon_list:
+                    await self.db.add_pokemon_to_collection(ctx.author.id, ctx.guild.id, pokemon_list)
+                    total_added += len(pokemon_list)
+                    category_results.append(f"Added {len(pokemon_list)} Pokémon from `{cat_name}`")
+            else:
+                not_found.append(cat_name)
+
+        if not category_results:
+            error_msg = "No valid categories found"
+            if not_found:
+                error_msg += f": {', '.join(not_found)}"
+            await ctx.reply(error_msg, mention_author=False)
+            return
+
+        response = "✅ " + "\n".join(category_results)
+        response += f"\n\n**Total added: {total_added} Pokémon**"
+        if not_found:
+            response += f"\n❌ Categories not found: {', '.join(not_found)}"
+        await ctx.reply(response, mention_author=False)
+
+    @category_group.command(name="remove")
+    async def category_remove(self, ctx, *, category_names: str):
+        """Remove Pokémon from categories from your collection
+
+        Examples:
+            p!cat remove Rares
+            p!cat remove Rares, Regionals
+        """
+        names_list = list(dict.fromkeys(
+            name.strip() for name in category_names.split(",") if name.strip()
+        ))
+
+        if not names_list:
+            await ctx.reply("No category names provided", mention_author=False)
+            return
+
+        total_removed = 0
+        category_results = []
+        not_found = []
+
+        for cat_name in names_list:
+            category = await self.db.get_category(ctx.guild.id, cat_name)
+            if category:
+                pokemon_list = category.get("pokemon", [])
+                if pokemon_list:
+                    modified = await self.db.remove_pokemon_from_collection(
+                        ctx.author.id, ctx.guild.id, pokemon_list
+                    )
+                    if modified:
+                        total_removed += len(pokemon_list)
+                        category_results.append(f"Removed {len(pokemon_list)} Pokémon from `{cat_name}`")
+            else:
+                not_found.append(cat_name)
+
+        if not category_results:
+            if not_found:
+                error_msg = f"❌ Categories not found or were deleted by server admin: {', '.join(not_found)}"
+            else:
+                error_msg = "No Pokémon were removed"
+            await ctx.reply(error_msg, mention_author=False)
+            return
+
+        response = "✅ " + "\n".join(category_results)
+        response += f"\n\n**Total removed: {total_removed} Pokémon**"
+        if not_found:
+            response += f"\n❌ Categories not found or were deleted by server admin: {', '.join(not_found)}"
+        await ctx.reply(response, mention_author=False)
+
+    # ------------------------------------------------------------------
+    # Admin Pokémon-level editing
+    # ------------------------------------------------------------------
+    @category_group.command(name="addpokemon", aliases=["addpoke"])
+    @commands.has_permissions(administrator=True)
+    async def category_addpokemon(self, ctx, name: str, *, pokemon_input: str):
+        """Add Pokémon to an existing category (Admin only)
+
+        Examples:
+            p!cat addpokemon Rares marshadow, hoopa
+            p!cat addpokemon Furfrou furfrou all
+        """
+        existing = await self.db.get_category(ctx.guild.id, name)
+        if not existing:
+            await ctx.reply(
+                f"❌ Category `{name}` does not exist. Use `p!cat create` to create it.",
+                mention_author=False,
+            )
+            return
+
+        pokemon_list, invalid = self.parse_pokemon_input(pokemon_input)
+
+        if not pokemon_list:
+            error_msg = "No valid Pokémon found"
+            if invalid:
+                error_msg += f". Invalid: {', '.join(invalid[:10])}"
+            await ctx.reply(error_msg, mention_author=False)
+            return
 
         existing_pokemon = set(existing.get("pokemon", []))
+        new_pokemon = [p for p in pokemon_list if p not in existing_pokemon]
 
-        # Check if using "all" keyword
-        if pokemon_input.strip().lower().endswith(" all"):
-            base_name = pokemon_input[:-4].strip()
-            variants = get_pokemon_with_variants(base_name, self.pokemon_data)
-            if not variants:
-                await ctx.reply(f"❌ Invalid Pokémon name: {base_name}", mention_author=False)
-                return
-            for p in variants:
-                if p in existing_pokemon:
-                    to_remove.append(p)
-                else:
-                    not_in_category.append(p)
+        if not new_pokemon:
+            await ctx.reply(f"All provided Pokémon are already in `{name}`.", mention_author=False)
+            return
+
+        merged = list(existing_pokemon) + new_pokemon
+        await self.db.update_category(ctx.guild.id, name, merged)
+
+        response = f"✅ Added {len(new_pokemon)} Pokémon to `{name}`"
+        if len(new_pokemon) <= 20:
+            response += f": {', '.join(new_pokemon)}"
         else:
-            # Parse comma-separated Pokémon names
-            names = [n.strip() for n in pokemon_input.split(",") if n.strip()]
-            for pokemon_name in names:
-                pokemon = find_pokemon_by_name_flexible(pokemon_name, self.pokemon_data)
-                if pokemon and pokemon.get("name"):
-                    if pokemon["name"] in existing_pokemon:
-                        to_remove.append(pokemon["name"])
-                    else:
-                        not_in_category.append(pokemon["name"])
-                else:
-                    invalid.append(pokemon_name)
+            response += f": {', '.join(new_pokemon[:20])} and {len(new_pokemon) - 20} more"
 
-        actually_removed = [p for p in to_remove if p in existing_pokemon]
+        skipped = [p for p in pokemon_list if p in existing_pokemon]
+        if skipped:
+            response += f"\n> -# {len(skipped)} already in category (skipped)"
+        if invalid:
+            response += f"\n⚠️ Invalid: {', '.join(invalid[:30])}"
+            if len(invalid) > 30:
+                response += f" and {len(invalid) - 30} more..."
+        await ctx.reply(response, mention_author=False)
+
+    @category_group.command(name="removepokemon", aliases=["removepoke"])
+    @commands.has_permissions(administrator=True)
+    async def category_removepokemon(self, ctx, name: str, *, pokemon_input: str):
+        """Remove specific Pokémon from an existing category (Admin only).
+
+        Examples:
+            p!cat removepokemon Rares marshadow, hoopa
+            p!cat removepokemon Furfrou furfrou all
+        """
+        existing = await self.db.get_category(ctx.guild.id, name)
+        if not existing:
+            await ctx.reply(f"❌ Category `{name}` does not exist.", mention_author=False)
+            return
+
+        pokemon_list, invalid = self.parse_pokemon_input(pokemon_input)
+
+        if not pokemon_list:
+            error_msg = "No valid Pokémon found"
+            if invalid:
+                error_msg += f". Invalid: {', '.join(invalid[:10])}"
+            await ctx.reply(error_msg, mention_author=False)
+            return
+
+        existing_pokemon = set(existing.get("pokemon", []))
+        to_remove = set(pokemon_list)
+
+        actually_removed = [p for p in pokemon_list if p in existing_pokemon]
+        not_in_category = [p for p in pokemon_list if p not in existing_pokemon]
 
         if not actually_removed:
             await ctx.reply(f"None of the provided Pokémon are in `{name}`.", mention_author=False)
@@ -678,7 +751,7 @@ class Category(commands.Cog):
         if total_pages > 1:
             view = CategoryPaginationView(ctx.author.id, name, pokemon_list, 1, total_pages)
             message = await ctx.reply(embed=view.create_embed(1), view=view, mention_author=False)
-            view.message = message  # Store message ref after send
+            view.message = message
         else:
             embed = discord.Embed(
                 title=f"📦 Category: {name}",
