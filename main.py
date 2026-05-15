@@ -99,12 +99,17 @@ async def memory_monitor():
 
             print(f"[MEMORY] {mem_mb:.1f} MB | Models: {model_status} | Predictions: {bot.prediction_count}")
 
-            if mem_mb > 400:
+            # Run GC early — 320 MB gives headroom before Railway's 500 MB wall
+            if mem_mb > 320:
                 print(f"[MEMORY] ⚠️ High usage ({mem_mb:.1f} MB), forcing GC...")
                 gc.collect()
                 await asyncio.sleep(1)
                 new_mem_mb = bot.process.memory_info().rss / 1024 / 1024
                 print(f"[MEMORY] After GC: {new_mem_mb:.1f} MB (freed {mem_mb - new_mem_mb:.1f} MB)")
+
+            # Evict stale keys from guild cache every cycle
+            if bot.db and hasattr(bot.db, 'gcache') and bot.db.gcache:
+                bot.db.gcache.cleanup_expired()
 
             await asyncio.sleep(60)
 
