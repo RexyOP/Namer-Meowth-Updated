@@ -261,7 +261,7 @@ class DefaultCategoryPreviewView(discord.ui.View):
             self._update_nav_buttons()
             await interaction.response.edit_message(embed=self.build_embed(self.current_page), view=self)
 
-    @discord.ui.button(label="← Back", emoji="", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="← Back", style=discord.ButtonStyle.secondary, row=1)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.ctx.author.id:
             await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
