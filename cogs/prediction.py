@@ -530,6 +530,8 @@ class Prediction(commands.Cog):
             image_url = await self.extract_image_url(message)
 
             if image_url:
+                if not self.predictor.models_initialized:
+                    return
                 try:
                     cache_key = self.predictor._generate_cache_key(image_url)
                     cached_result = self.predictor.cache.get(cache_key)
@@ -574,6 +576,9 @@ class Prediction(commands.Cog):
                 if embed.title:
                     if (embed.title == "A wild pokémon has appeared!" or
                             embed.title.endswith("A new wild pokémon has appeared!")):
+
+                        if not self.predictor.models_initialized:
+                            return
 
                         image_url = await self.extract_image_url(message)
 
@@ -694,7 +699,8 @@ class Prediction(commands.Cog):
                                 else:
                                     print(f"[POKETWO-SPAWN] ValueError: {e}")
                             except Exception as e:
-                                print(f"Auto-detection error: {e}")
+                                if "not loaded" not in str(e):
+                                    print(f"Auto-detection error: {e}")
 
 
 async def setup(bot):
