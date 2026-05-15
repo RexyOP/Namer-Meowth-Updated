@@ -319,6 +319,78 @@ class GuildCache:
         self._reserve_roles.pop(guild_id, None)
 
     # -----------------------------------------------------------------------
+    # Incense settings  (enabled flag + categories + paused channels)
+    # Cached so incense.py on_message doesn't hit DB on every spawn
+    # -----------------------------------------------------------------------
+    TTL_INCENSE = 30  # seconds
+
+    async def get_incense_settings(self, guild_id: int) -> dict:
+        """Return the raw incense guild doc (or {}) from cache or DB."""
+        if not hasattr(self, '_incense_settings'):
+            self._incense_settings: dict = {}
+        entry = self._incense_settings.get(guild_id)
+        if entry and entry.is_valid():
+            return entry.value
+        async with self._guild_lock(guild_id):
+            entry = self._incense_settings.get(guild_id)
+            if entry and entry.is_valid():
+                return entry.value
+            doc = await self._db.db.user_data.find_one(
+                {"user_id": f"incense_guild_{guild_id}"}
+            ) or {}
+            self._incense_settings[guild_id] = _TTLEntry(doc, self.TTL_INCENSE)
+            return doc
+
+    def invalidate_incense_settings(self, guild_id: int):
+        """Call whenever incense settings are saved for a guild."""
+        if hasattr(self, '_incense_settings'):
+            self._incense_settings.pop(guild_id, None)
+
+    # -----------------------------------------------------------------------
+    # Cleanup — removes expired keys from all cache dicts to prevent bloat.
+    # Call from memory_monitor every 60 s.
+    # -----------------------------------------------------------------------
+    def cleanup_expired(self):
+        """
+        Evict entries whose TTL has elapsed from every per-guild dict.
+        Without this, dead keys accumulate forever because Python never
+        shrinks dicts automatically.
+        """
+        dicts_to_clean = [
+            self._guild_settings,
+            self._shiny_hunts,
+            self._rare_collectors,
+            self._collectors,
+            self._type_pingers,
+            self._region_pingers,
+            self._reserves,
+            self._reserve_roles,
+        ]
+        if hasattr(self, '_incense_settings'):
+            dicts_to_clean.append(self._incense_settings)
+
+        total_removed = 0
+        for d in dicts_to_clean:
+            expired = [k for k, v in d.items() if not v.is_valid()]
+            for k in expired:
+                del d[k]
+            total_removed += len(expired)
+
+        # Also shrink the guild_locks dict — remove locks for guilds no
+        # longer in any cache (avoids keeping asyncio.Lock objects forever)
+        active_guilds: set = set()
+        for d in dicts_to_clean:
+            for k in d:
+                gid = k[0] if isinstance(k, tuple) else k
+                active_guilds.add(gid)
+        stale_locks = [g for g in self._guild_locks if g not in active_guilds]
+        for g in stale_locks:
+            del self._guild_locks[g]
+
+        if total_removed:
+            print(f"[GUILD_CACHE] cleanup_expired: removed {total_removed} stale entries")
+
+    # -----------------------------------------------------------------------
     # Warm-up — call on !loadmodel
     # -----------------------------------------------------------------------
     async def warm(self, guild_ids: list | None = None):
