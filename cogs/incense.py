@@ -28,6 +28,10 @@ async def _save_guild_doc(db, guild_id: int, data: dict):
         {"$set": data},
         upsert=True
     )
+    # Invalidate cached incense settings so next on_message re-fetches
+    gcache = getattr(db, 'gcache', None)
+    if gcache:
+        gcache.invalidate_incense_settings(guild_id)
 
 async def _get_enabled(db, guild_id: int) -> bool:
     doc = await _get_guild_doc(db, guild_id)
@@ -284,7 +288,7 @@ class IncenseListView(discord.ui.View):
         active_total: int,
         author_id: int,
     ):
-        super().__init__(timeout=120)
+        super().__init__(timeout=60)  # reduced from 120
         self.paused_pages = paused_pages
         self.active_pages = active_pages
         self.paused_total = paused_total
@@ -292,6 +296,7 @@ class IncenseListView(discord.ui.View):
         self.author_id = author_id
         self.showing_paused = True
         self.current = 0
+        self.message: discord.Message | None = None
         self._inject_summary()
         self._update_buttons()
 
@@ -364,8 +369,13 @@ class IncenseListView(discord.ui.View):
         await interaction.response.edit_message(embed=pages[self.current], view=self)
 
     async def on_timeout(self):
-        for item in self.children:
-            item.disabled = True
+        self.clear_items()
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+        self.message = None
 
 
 # ─────────────────────────────────────────────
@@ -430,6 +440,10 @@ class Incense(commands.Cog):
 
     # ── listener ─────────────────────────────
 
+    def _get_gcache(self):
+        """Return GuildCache if available (attached by prediction cog on startup)."""
+        return getattr(self.db, 'gcache', None)
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if not message.guild:
@@ -438,16 +452,33 @@ class Incense(commands.Cog):
             return
         if not isinstance(message.channel, discord.TextChannel):
             return
-        if not await _get_enabled(self.db, message.guild.id):
+
+        guild_id = message.guild.id
+        gcache = self._get_gcache()
+
+        if gcache:
+            # Single cached doc — 0 DB queries on cache hit (TTL=30s)
+            doc = await gcache.get_incense_settings(guild_id)
+        else:
+            doc = await _get_guild_doc(self.db, guild_id)
+
+        if not doc.get("incense_enabled", True):
             return
-        if not await self._channel_in_monitored_category(message.channel):
+
+        monitored_cats = doc.get("incense_categories", [])
+        if message.channel.category_id not in monitored_cats:
             return
-        if await self._is_paused(message.channel):
+
+        paused = doc.get("incense_paused_channels", [])
+        if message.channel.id in paused:
             return
 
         content = message.content or ""
         if INCENSE_PATTERN.search(content):
             await self._pause_channel(message.channel)
+            # Invalidate cache so next on_message sees the updated paused list
+            if gcache:
+                gcache.invalidate_incense_settings(guild_id)
             try:
                 await message.channel.send(
                     f"Incense purchased! Poketwo has been restricted in this channel. "
@@ -1254,7 +1285,8 @@ class Incense(commands.Cog):
             view.showing_paused = False
             view._update_buttons()
 
-        await ctx.send(embed=view.current_pages[0], view=view, reference=ctx.message, mention_author=False)
+        msg = await ctx.send(embed=view.current_pages[0], view=view, reference=ctx.message, mention_author=False)
+        view.message = msg
 
     # ── help ─────────────────────────────────
 
