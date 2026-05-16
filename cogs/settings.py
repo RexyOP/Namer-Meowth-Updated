@@ -349,10 +349,14 @@ class Settings(commands.Cog):
         rare_id     = settings.get("rare_role_id")
         regional_id = settings.get("regional_role_id")
 
-        # Fetch incense and reserve allowed roles concurrently
-        from incense import _get_allowed_roles as _inc_get_allowed_roles
+        # Fetch incense and reserve allowed roles concurrently.
+        # Incense allowed roles live in user_data keyed by f"incense_guild_{guild_id}".
+        async def _get_incense_allowed_roles():
+            doc = await self.db.db.user_data.find_one({"user_id": f"incense_guild_{ctx.guild.id}"})
+            return (doc or {}).get("incense_allowed_roles", [])
+
         inc_role_ids, rsv_role_ids = await asyncio.gather(
-            _inc_get_allowed_roles(self.db, ctx.guild.id),
+            _get_incense_allowed_roles(),
             self.db.get_reserve_allowed_roles(ctx.guild.id),
         )
 
