@@ -251,6 +251,23 @@ DEFAULT_CATEGORIES: dict[str, dict] = {
             "Sneasler",
         ],
     },
+    "paradox": {
+        "label": "Paradox",
+        "emoji": "🐟",
+        "description": "All Paradox except Rare",
+        "pokemon": [
+            "Brute Bonnet","Flutter Mane","Slither Wing","Sandy Shocks","Iron Jugulis","Roaring Moon","Iron Valiant","Walking Wake","Gouging Fire","Scream Tail","Iron Treads","Iron Bundle","Iron Thorns","Iron Leaves","Raging Bolt","Great Tusk","Iron Hands","Iron Moth","Iron Boulder","Iron Crown",
+
+        ],    
+    },
+    "eevee": {
+        "label": "Eevee",
+        "emoji": "🦊",
+        "description": "All Eeveelutions except Eevee",
+        "pokemon": [
+           "Partner Eevee","Vaporeon","Jolteon","Flareon","Umbreon","Leafeon","Glaceon","Sylveon","Espeon",
+        ],        
+    },
     "gigantamax": {
         "label": "Gigantamax",
         "emoji": "🔆",
