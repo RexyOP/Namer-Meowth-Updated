@@ -5,7 +5,7 @@ from discord.ext import commands
 from config import EMBED_COLOR, BOT_PREFIX
 
 class Help(commands.Cog):
-    """Help and information commandss"""
+    """Help and information commands"""
 
     def __init__(self, bot):
         self.bot = bot
@@ -14,693 +14,433 @@ class Help(commands.Cog):
     async def help_command(self, ctx, category: str = None):
         """Show help information
 
-        Categories: collection, category, hunt, settings, prediction, starboard, helpful, incense, captcha, owner, all
+        Categories: collection, category, hunt, pings, settings, prediction, starboard, helpful, incense, captcha, reserve, channels, owner, all
         """
-        prefix = BOT_PREFIX[0]  # Use first prefix for examples
-
-        # Check if user is owner
+        prefix = BOT_PREFIX[0]
         is_owner = await self.bot.is_owner(ctx.author)
 
         if not category:
-            # Main help embed
             embed = discord.Embed(
-                title="📚 Poketwo Helper Bot - Help",
-                description=f"Use `{prefix}help <category>` for detailed information about a category\nUse `{prefix}help all` to see all commands at once",
-                color=EMBED_COLOR
+                title="📚 Poketwo Helper Bot — Help",
+                description=f"Use `{prefix}help <category>` for details  •  `{prefix}help all` to see everything",
+                color=EMBED_COLOR,
             )
-
-            embed.add_field(
-                name="📦 Collection",
-                value=f"`{prefix}help collection` - Manage your Pokemon collection",
-                inline=False
-            )
-
-            embed.add_field(
-                name="🗂️ Category",
-                value=f"`{prefix}help category` - Bulk collection management with categories",
-                inline=False
-            )
-
-            embed.add_field(
-                name="✨ Shiny Hunt",
-                value=f"`{prefix}help hunt` - Set up shiny hunting",
-                inline=False
-            )
-
-            embed.add_field(
-                name="🔷 Type & Region Pings",
-                value=f"`{prefix}help pings` - Get pinged by Pokemon type or region",
-                inline=False
-            )
-
-            embed.add_field(
-                name="⚙️ Settings",
-                value=f"`{prefix}help settings` - Configure bot settings",
-                inline=False
-            )
-
-            embed.add_field(
-                name="🔮 Prediction",
-                value=f"`{prefix}help prediction` - Manual Pokemon prediction",
-                inline=False
-            )
-
-            embed.add_field(
-                name="⭐ Starboard",
-                value=f"`{prefix}help starboard` - Configure starboard channels",
-                inline=False
-            )
-
-            embed.add_field(
-                name="🔍 Helpful Commands",
-                value=f"`{prefix}help helpful` - Spawn rates, shiny rates & hint solver",
-                inline=False
-            )
-
-            embed.add_field(
-                name="🔥 Incense",
-                value=f"`{prefix}help incense` - Manage Poketwo incense sessions",
-                inline=False
-            )
-
-            embed.add_field(
-                name="🔐 Captcha",
-                value=f"`{prefix}help captcha` - Captcha alert configuration",
-                inline=False
-            )
-
-            embed.add_field(
-                name="💾 Reserve",
-                value=f"`{prefix}help reserve` - Server-specific Pokemon reservation system",
-                inline=False
-            )
-
+            embed.add_field(name="📦 Collection",       value=f"`{prefix}help collection` — Manage your Pokémon collection",              inline=False)
+            embed.add_field(name="🗂️ Category",         value=f"`{prefix}help category` — Bulk collection management with categories",    inline=False)
+            embed.add_field(name="✨ Shiny Hunt",        value=f"`{prefix}help hunt` — Set up shiny hunting",                              inline=False)
+            embed.add_field(name="🔷 Type & Region",    value=f"`{prefix}help pings` — Get pinged by Pokémon type or region",             inline=False)
+            embed.add_field(name="⚙️ Settings",         value=f"`{prefix}help settings` — Toggle features and AFK",                       inline=False)
+            embed.add_field(name="🎭 Roles",            value=f"`{prefix}help roles` — Configure rare / regional ping roles",              inline=False)
+            embed.add_field(name="📺 Channels",         value=f"`{prefix}help channels` — Configure all bot channels (starboard, captcha…)",inline=False)
+            embed.add_field(name="🔮 Prediction",       value=f"`{prefix}help prediction` — Manual Pokémon prediction",                   inline=False)
+            embed.add_field(name="🔍 Helpful",          value=f"`{prefix}help helpful` — Spawn rates, shiny rates & hint solver",          inline=False)
+            embed.add_field(name="🔥 Incense",          value=f"`{prefix}help incense` — Manage Poketwo incense sessions",                 inline=False)
+            embed.add_field(name="🔐 Captcha",          value=f"`{prefix}help captcha` — Captcha alert information",                       inline=False)
+            embed.add_field(name="💾 Reserve",          value=f"`{prefix}help reserve` — Server-specific Pokémon reservation system",      inline=False)
             if is_owner:
-                embed.add_field(
-                    name="👑 Owner",
-                    value=f"`{prefix}help owner` - Bot owner commands",
-                    inline=False
-                )
-
-            embed.add_field(
-                name="ℹ️ About",
-                value=f"`{prefix}about` - Bot information and stats",
-                inline=False
-            )
-
-            embed.add_field(
-                name="🏓 Ping",
-                value=f"`{prefix}ping` - Check bot latency",
-                inline=False
-            )
-
+                embed.add_field(name="👑 Owner",        value=f"`{prefix}help owner` — Bot owner commands",                               inline=False)
+            embed.add_field(name="ℹ️ About",            value=f"`{prefix}about` — Bot information and stats",                             inline=False)
+            embed.add_field(name="🏓 Ping",             value=f"`{prefix}ping` — Check bot latency",                                      inline=False)
             embed.set_footer(text=f"Bot Prefix: {', '.join(BOT_PREFIX)}")
-
             await ctx.reply(embed=embed, mention_author=False)
             return
 
         category = category.lower()
 
-        # Collection category
+        # ── Collection ────────────────────────────────────────────────
         if category in ["collection", "cl", "collect"]:
             embed = discord.Embed(
                 title="📦 Collection Commands",
-                description="Manage your Pokemon collection for this server. Get pinged when Pokemon you collect spawn!",
-                color=EMBED_COLOR
+                description="Manage your Pokémon collection for this server. Get pinged when Pokémon you collect spawn!",
+                color=EMBED_COLOR,
             )
-
             embed.add_field(
                 name=f"`{prefix}cl add <pokemon>`",
                 value=(
-                    "Add Pokemon to your collection\n"
+                    "Add Pokémon to your collection\n"
                     f"**Aliases:** `{prefix}collection add`\n"
-                    f"**Examples:**\n"
                     f"• `{prefix}cl add Pikachu`\n"
                     f"• `{prefix}cl add Pikachu, Charizard, Mewtwo`\n"
                     f"• `{prefix}cl add Furfrou all` (adds all Furfrou variants)"
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
                 name=f"`{prefix}cl remove <pokemon | --sr <rate> | --user <@user>>`",
                 value=(
                     "Remove Pokémon from your collection\n"
-                    f"**Aliases:** `{prefix}collection remove`\n"
-                    f"**Examples:**\n"
                     f"• `{prefix}cl remove Pikachu`\n"
-                    f"• `{prefix}cl remove Pikachu, Charizard`\n"
-                    f"• `{prefix}cl remove Furfrou all` (removes all Furfrou variants)\n"
-                    f"• `{prefix}cl remove all Furfrou` (same as above)\n"
-                    f"• `{prefix}cl remove --sr 899` (removes all Pokémon with spawn rate 1/899)\n"
-                    f"• `{prefix}cl remove --sr 225 --sr 337` (multiple rates at once)\n"
-                    f"• `{prefix}cl remove Pikachu, --sr 899` (mix names and rates)\n"
-                    f"• `{prefix}cl remove --user @someone` (removes everything **they** have from **your** collection)\n"
-                    f"• `{prefix}cl remove --user @someone --sr 899` (flags can be combined)"
+                    f"• `{prefix}cl remove --sr 899` (by spawn rate)\n"
+                    f"• `{prefix}cl remove --user @someone`"
                 ),
-                inline=False
+                inline=False,
             )
-
-            embed.add_field(
-                name=f"`{prefix}cl list`",
-                value=(
-                    "View your collection in a paginated embed with buttons\n"
-                    f"**Aliases:** `{prefix}collection list`"
-                ),
-                inline=False
-            )
-
-            embed.add_field(
-                name=f"`{prefix}cl raw [--sr <rate>]`",
-                value=(
-                    "View your collection as raw text, **grouped by spawn rate tier** — each tier on its own line, "
-                    "comma-separated with a trailing comma, blank line between tiers. Paginates with ◀️ ▶️ buttons if too long\n"
-                    f"**Aliases:** `{prefix}collection raw`\n"
-                    f"**Examples:**\n"
-                    f"• `{prefix}cl raw` — full collection grouped by SR tier\n"
-                    f"• `{prefix}cl raw --sr 899` — only show Pokémon with spawn rate 1/899\n"
-                    f"• `{prefix}cl raw --sr 225 --sr 337` — show multiple specific tiers only"
-                ),
-                inline=False
-            )
-
-            embed.add_field(
-                name=f"`{prefix}cl clear`",
-                value=(
-                    "⚠️ Clear your entire collection\n"
-                    f"**Aliases:** `{prefix}collection clear`"
-                ),
-                inline=False
-            )
-
+            embed.add_field(name=f"`{prefix}cl list`",  value="View your collection (paginated)",     inline=False)
+            embed.add_field(name=f"`{prefix}cl raw`",   value="View as raw text grouped by SR tier",  inline=False)
+            embed.add_field(name=f"`{prefix}cl clear`", value="⚠️ Clear your entire collection",      inline=False)
             embed.add_field(
                 name="💡 How It Works",
                 value=(
-                    "• When a Pokemon you collect spawns, you get pinged!\n"
-                    "• If you add `Furfrou`, you get pinged Furfrou only not its other forms\n"
-                    "• If you add `Furfrou all`, all variants are explicitly added to your collection"
+                    "• When a Pokémon you collect spawns, you get pinged\n"
+                    "• `Furfrou all` adds every Furfrou variant explicitly"
                 ),
-                inline=False
+                inline=False,
             )
 
-        # Category commands
+        # ── Category ──────────────────────────────────────────────────
         elif category in ["category", "cat", "categories"]:
             embed = discord.Embed(
                 title="🗂️ Category Commands",
-                description="Bulk collection management with categories. Admins create categories, users add them to their collection!",
-                color=EMBED_COLOR
+                description="Bulk collection management with categories. Admins create categories, users subscribe to them.",
+                color=EMBED_COLOR,
             )
-
-            embed.add_field(
-                name=f"`{prefix}cat add <categories>`",
-                value=(
-                    "Add Pokemon from categories to your collection\n"
-                    f"**Aliases:** `{prefix}category add`\n"
-                    f"**Examples:**\n"
-                    f"• `{prefix}cat add Rares`\n"
-                    f"• `{prefix}cat add Rares, Regionals, Gigantamax`"
-                ),
-                inline=False
-            )
-
-            embed.add_field(
-                name=f"`{prefix}cat remove <categories>`",
-                value=(
-                    "Remove Pokemon from categories from your collection\n"
-                    f"**Aliases:** `{prefix}category remove`\n"
-                    f"**Example:** `{prefix}cat remove Rares`"
-                ),
-                inline=False
-            )
-
-            embed.add_field(
-                name=f"`{prefix}cat list`",
-                value=(
-                    "View all server categories with Pokemon counts\n"
-                    f"**Aliases:** `{prefix}category list`"
-                ),
-                inline=False
-            )
-
-            embed.add_field(
-                name=f"`{prefix}cat info <name>`",
-                value=(
-                    "View Pokemon in a specific category (paginated)\n"
-                    f"**Aliases:** `{prefix}category info`\n"
-                    f"**Example:** `{prefix}cat info Rares`"
-                ),
-                inline=False
-            )
-
+            embed.add_field(name=f"`{prefix}cat add <categories>`",    value="Add Pokémon from a category to your collection",  inline=False)
+            embed.add_field(name=f"`{prefix}cat remove <categories>`", value="Remove Pokémon from a category from your collection", inline=False)
+            embed.add_field(name=f"`{prefix}cat list`",                value="View all server categories with Pokémon counts",  inline=False)
+            embed.add_field(name=f"`{prefix}cat info <name>`",         value="View Pokémon in a specific category (paginated)", inline=False)
             embed.add_field(
                 name="📝 Admin Commands",
                 value=(
-                    f"`{prefix}cat create <name> <pokemon>` - Create a category\n"
-                    f"**Example:** `{prefix}cat create Rares articuno, moltres, zapdos`\n\n"
-                    f"`{prefix}cat edit <name> <pokemon>` - Edit a category (replaces all Pokemon)\n"
-                    f"**Example:** `{prefix}cat edit Rares marshadow, lugia`\n\n"
-                    f"`{prefix}cat addpokemon <name> <pokemon>` - Add Pokemon to an existing category\n"
-                    f"**Aliases:** `{prefix}cat addpoke`\n"
-                    f"**Example:** `{prefix}cat addpokemon Rares hoopa, marshadow`\n\n"
-                    f"`{prefix}cat removepokemon <name> <pokemon>` - Remove specific Pokemon from a category\n"
-                    f"**Aliases:** `{prefix}cat removepoke`\n"
-                    f"**Example:** `{prefix}cat removepokemon Rares hoopa`\n\n"
-                    f"`{prefix}cat defaults` - Add an In-Built category from default list\n"
-                    f"`{prefix}cat delete <name>` - Delete a category\n"
-                    f"**Example:** `{prefix}cat delete Rares`"
+                    f"`{prefix}cat create <name> <pokemon>` — Create a category\n"
+                    f"`{prefix}cat edit <name> <pokemon>` — Replace all Pokémon in a category\n"
+                    f"`{prefix}cat addpokemon <name> <pokemon>` — Add to an existing category\n"
+                    f"`{prefix}cat removepokemon <name> <pokemon>` — Remove from a category\n"
+                    f"`{prefix}cat defaults` — Add built-in category from default list\n"
+                    f"`{prefix}cat delete <name>` — Delete a category"
                 ),
-                inline=False
+                inline=False,
             )
 
-            embed.add_field(
-                name="💡 How It Works",
-                value=(
-                    "• Admins create categories with Pokemon lists\n"
-                    "• Users can add entire categories to their collection at once\n"
-                    "• Supports `all` variants: `furfrou all` or `all furfrou`\n"
-                    "• Category names are case-insensitive and can have spaces"
-                ),
-                inline=False
-            )
-
-        # Shiny Hunt category
+        # ── Shiny Hunt ────────────────────────────────────────────────
         elif category in ["hunt", "sh", "shiny"]:
             embed = discord.Embed(
                 title="✨ Shiny Hunt Commands",
-                description="Set up shiny hunting to get pinged when your target Pokemon spawns!",
-                color=EMBED_COLOR
+                description="Get pinged when your hunt target Pokémon spawns!",
+                color=EMBED_COLOR,
             )
+            embed.add_field(name=f"`{prefix}sh`",               value="Check your current shiny hunt",               inline=False)
+            embed.add_field(name=f"`{prefix}sh <pokemon>`",     value="Start hunting a Pokémon (`{prefix}sh Pikachu`)", inline=False)
+            embed.add_field(name=f"`{prefix}sh clear`",         value="Stop hunting (also accepts `none` / `stop`)", inline=False)
+            embed.add_field(name="💡 Note", value="You can hunt one or more Pokémon (same dex) at a time per server.", inline=False)
 
-            embed.add_field(
-                name=f"`{prefix}sh`",
-                value=(
-                    "Check your current shiny hunt\n"
-                    f"**Aliases:** `{prefix}hunt`, `{prefix}shinyhunt`"
-                ),
-                inline=False
-            )
-
-            embed.add_field(
-                name=f"`{prefix}sh <pokemon>`",
-                value=(
-                    "Start hunting a Pokemon\n"
-                    f"**Aliases:** `{prefix}hunt <pokemon>`, `{prefix}shinyhunt <pokemon>`\n"
-                    f"**Examples:**\n"
-                    f"• `{prefix}sh Pikachu`\n"
-                    f"• `{prefix}sh unown a, unown b, unown c`\n"
-                    f"• `{prefix}sh Furfrou all` (hunt all Furfrou variants)"
-                ),
-                inline=False
-            )
-
-            embed.add_field(
-                name=f"`{prefix}sh clear`",
-                value=(
-                    "Stop hunting (also accepts `none` or `stop`)\n"
-                    f"**Aliases:** `{prefix}hunt clear`, `{prefix}shinyhunt clear`"
-                ),
-                inline=False
-            )
-
-            embed.add_field(
-                name="💡 Note",
-                value="You can hunt one or more Pokemon(if they all belong to same dex) at a time per server!",
-                inline=False
-            )
-
-        # Settings category
+        # ── Settings ──────────────────────────────────────────────────
         elif category in ["settings", "setting", "config", "afk"]:
             embed = discord.Embed(
                 title="⚙️ Settings Commands",
-                description="Configure bot settings for your server and personal preferences",
-                color=EMBED_COLOR
+                description="Configure bot features for your server and personal preferences.",
+                color=EMBED_COLOR,
             )
-
-            embed.add_field(
-                name="👤 User Settings",
-                value="",
-                inline=False
-            )
-
+            embed.add_field(name="👤 User Settings", value="", inline=False)
             embed.add_field(
                 name=f"`{prefix}afk`",
                 value=(
-                    "Toggle pings using interactive buttons — **4 toggles available:**\n"
+                    "Toggle pings via interactive buttons — 4 toggles:\n"
                     f"**Aliases:** `{prefix}away`\n"
-                    "🟢 **Green** = Pings ON  •  🔴 **Red** = Pings OFF\n"
-                    "• **ShinyHunt** — shiny hunt pings\n"
-                    "• **Collection** — collection pings\n"
-                    "• **TypePings** — type-based pings\n"
-                    "• **RegionPings** — region-based pings\n"
-                    "*AFK status is global across all servers*"
+                    "🟢 Green = Pings ON  •  🔴 Red = Pings OFF\n"
+                    "• **ShinyHunt** • **Collection** • **TypePings** • **RegionPings**\n"
+                    "*AFK is global across all servers*"
                 ),
-                inline=False
+                inline=False,
             )
-
-            embed.add_field(
-                name="🛠️ Server Settings",
-                value="",
-                inline=False
-            )
-
+            embed.add_field(name="🛠️ Server Settings", value="", inline=False)
             embed.add_field(
                 name=f"`{prefix}server-settings`",
                 value=(
                     "View all current server settings\n"
-                    f"**Aliases:** `{prefix}ss`, `{prefix}ssettings`, `{prefix}serversettings`\n"
-                    "Shows: Rare Role, Regional Role, Best Name, Only-Pings status, catch_command status, Captcha Alert Channel"
+                    f"**Aliases:** `{prefix}ss`, `{prefix}ssettings`\n"
+                    "Shows: Roles, feature toggles. Use `{prefix}channel settings` for channels."
                 ),
-                inline=False
+                inline=False,
             )
-
-            embed.add_field(
-                name="📝 Admin Commands",
-                value="",
-                inline=False
-            )
-
-            embed.add_field(
-                name=f"`{prefix}rare-role @role`",
-                value=(
-                    "Set role to ping for rare Pokemon (Legendary/Mythical/Ultra Beast)\n"
-                    f"**Aliases:** `{prefix}rr`, `{prefix}rarerole`\n"
-                    f"**Example:** `{prefix}rare-role @Rare Hunters`\n"
-                    f"Use `{prefix}rare-role none` to clear"
-                ),
-                inline=False
-            )
-
-            embed.add_field(
-                name=f"`{prefix}regional-role @role`",
-                value=(
-                    "Set role to ping for regional Pokemon\n"
-                    f"**Aliases:** `{prefix}regrole`, `{prefix}regional`, `{prefix}regionrole`\n"
-                    f"**Example:** `{prefix}regional-role @Regional`\n"
-                    f"Use `{prefix}regional-role none` to clear"
-                ),
-                inline=False
-            )
-
+            embed.add_field(name="📝 Admin Commands", value="", inline=False)
             embed.add_field(
                 name=f"`{prefix}toggle <feature>`",
                 value=(
                     "Toggle server features on/off\n"
-                    f"**Examples:**\n"
-                    f"• `{prefix}toggle best_name` — Enable/disable the Shortest Name line in predictions\n"
-                    f"• `{prefix}toggle only_pings` — Enable/disable only-pings mode\n"
-                    f"• `{prefix}toggle catch_command` — Enable/disable catch_command mode\n"
-                     f"• `{prefix}toggle hint_solver` — Enable/disable hint solver\n"
-                    f"**`only_pings`:** When enabled, predictions are only sent when there are active collectors, hunters, or ping roles. "
+                    f"• `{prefix}toggle best_name` — shortest name line in predictions\n"
+                    f"• `{prefix}toggle only_pings` — only send predictions when someone has pings\n"
+                    f"• `{prefix}toggle catch_command` — catch command line in predictions\n"
+                    f"• `{prefix}toggle hint_solver` — automatic hint solving\n"
                     f"Also accessible via `{prefix}only-pings true/false`"
                 ),
-                inline=False
+                inline=False,
             )
-
-            embed.add_field(
-                name=f"`{prefix}captcha-channel [#channel]`",
-                value=(
-                    "Set the channel where users get pinged when Pokétwo asks them to verify\n"
-                    f"**Aliases:** `{prefix}captchachannel`, `{prefix}setcaptcha`\n"
-                    f"• `{prefix}captcha-channel #alerts` — set the captcha alert channel\n"
-                    f"• `{prefix}captcha-channel` (no args) — clear and **disable** captcha alerts\n"
-                    "When a captcha is detected the bot pings the user with a **Verify** button linking to their captcha URL.\n"
-                    "Same user won't be re-pinged within 5 minutes if another captcha appears"
-                ),
-                inline=False
-            )
-
             embed.add_field(
                 name=f"`{prefix}clear-pings [@user | user_id]`",
                 value=(
-                    "Clear all ping data (collections, shiny hunts, type pings, region pings) for this server\n"
-                    f"**Aliases:** `{prefix}clearpings`, `{prefix}clearserverpings`, `{prefix}resetpings`\n"
-                    "• No argument → clears **all users** in the server (confirm/cancel buttons)\n"
-                    "• With @user or user ID → clears only that user\n"
-                    "⚠️ Requires server owner, administrator, or bot owner"
+                    "Clear all ping data for this server\n"
+                    f"**Aliases:** `{prefix}clearpings`, `{prefix}resetpings`\n"
+                    "• No argument → clears **all users**\n"
+                    "• With @user → clears only that user\n"
+                    "⚠️ Requires server owner, admin, or bot owner"
                 ),
-                inline=False
+                inline=False,
+            )
+            embed.add_field(
+                name="📺 Channel & Role Config",
+                value=(
+                    f"See `{prefix}help channels` for channel configuration\n"
+                    f"See `{prefix}help roles` for role configuration"
+                ),
+                inline=False,
             )
 
-        # Type & Region Pings category
+        # ── Roles ─────────────────────────────────────────────────────
+        elif category in ["roles", "role"]:
+            embed = discord.Embed(
+                title="🎭 Role Commands",
+                description="Configure ping roles for rare and regional Pokémon.",
+                color=EMBED_COLOR,
+            )
+            embed.add_field(
+                name=f"`{prefix}role`",
+                value=(
+                    "Show currently configured roles\n"
+                    f"**Aliases:** `{prefix}roles`"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name=f"`{prefix}role rare [@role]`",
+                value=(
+                    "Set role to ping for rare Pokémon (Legendary / Mythical / Ultra Beast)  **(Admin only)**\n"
+                    f"**Aliases:** `{prefix}role r`\n"
+                    f"• `{prefix}role rare @Rare Hunters` — set the role\n"
+                    f"• `{prefix}role rare` (no args) — clear / disable"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name=f"`{prefix}role regional [@role]`",
+                value=(
+                    "Set role to ping for regional Pokémon  **(Admin only)**\n"
+                    f"**Aliases:** `{prefix}role reg`\n"
+                    f"• `{prefix}role regional @Regionals` — set the role\n"
+                    f"• `{prefix}role regional` (no args) — clear / disable"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="🔒 Incense & Reserve Roles",
+                value=(
+                    "Allowed roles for incense pause/resume and reserve add are managed inside those commands:\n"
+                    f"`{prefix}inc allowedroles` • `{prefix}r allowedroles`"
+                ),
+                inline=False,
+            )
+
+        # ── Channels ──────────────────────────────────────────────────
+        elif category in ["channels", "channel", "ch"]:
+            embed = discord.Embed(
+                title="📺 Channel Configuration",
+                description=(
+                    f"All channel settings live under the `{prefix}channel` group.\n"
+                    f"Use `{prefix}channel settings` to see every configured channel at a glance."
+                ),
+                color=EMBED_COLOR,
+            )
+            embed.add_field(
+                name=f"`{prefix}channel settings`",
+                value="View all configured channels (captcha, starboard, etc.)",
+                inline=False,
+            )
+            embed.add_field(
+                name=f"⭐ `{prefix}channel starboard` — Starboard  *(Admin)*",
+                value=(
+                    f"`{prefix}channel starboard settings` — view starboard channels\n"
+                    f"`{prefix}channel starboard all [#ch | none]` — set all at once\n"
+                    f"`{prefix}channel starboard catch/egg/unbox [#ch | none]`\n"
+                    f"`{prefix}channel starboard shiny/gigantamax/highiv/lowiv [#ch | none]`\n"
+                    f"`{prefix}channel starboard missingno/milestone [#ch | none]`\n"
+                    "Use `none` instead of `#channel` to clear."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name=f"🔐 `{prefix}channel captcha [#ch]` — Captcha Alerts  *(Admin)*",
+                value=(
+                    f"• `{prefix}channel captcha #alerts` — set captcha alert channel\n"
+                    f"• `{prefix}channel captcha` (no args) — clear / disable\n"
+                    "Users are pinged here when Pokétwo asks them to verify."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name=f"👑 `{prefix}channel lowpred #ch` / `{prefix}channel secondary #ch`  *(Owner)*",
+                value=(
+                    "Set global channels for low-confidence predictions and secondary model logs."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="📋 What Gets Logged to Starboard?",
+                value=(
+                    "• Shiny / Gigantamax / MissingNo catches, hatches, unboxes\n"
+                    "• High IV (≥90%) or Low IV (≤10%)\n"
+                    "• Milestone catches (100 / 1K / 10K / 100K of a single species)\n"
+                    "A Pokémon meeting multiple criteria is sent to multiple channels."
+                ),
+                inline=False,
+            )
+
+        # ── Type & Region Pings ───────────────────────────────────────
         elif category in ["pings", "ping", "typepings", "regionpings", "tp", "rp"]:
             embed = discord.Embed(
                 title="🔷 Type & Region Ping Commands",
-                description="Get pinged whenever a Pokemon of a specific type or from a specific region spawns!",
-                color=EMBED_COLOR
+                description="Get pinged whenever a Pokémon of a specific type or region spawns!",
+                color=EMBED_COLOR,
             )
-
             embed.add_field(
                 name=f"`{prefix}tp`",
                 value=(
                     "Open the interactive **Type Pings** menu with toggle buttons\n"
-                    f"**Aliases:** `{prefix}typepings`, `{prefix}typeping`\n"
+                    f"**Aliases:** `{prefix}typepings`\n"
                     "🟢 Green = enabled  •  ⚫ Grey = disabled\n"
-                    "All 18 types available: Normal, Fire, Water, Electric, Grass, Ice, Fighting, Poison, Ground, Flying, Psychic, Bug, Rock, Ghost, Dragon, Dark, Steel, Fairy"
+                    "All 18 types available."
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
                 name=f"`{prefix}tp <types>`",
                 value=(
-                    "Directly toggle one or more types without opening the menu\n"
-                    f"**Examples:**\n"
-                    f"• `{prefix}tp bug` — toggle Bug\n"
-                    f"• `{prefix}tp bug grass fire` — toggle Bug, Grass and Fire at once\n"
-                    "If a type was OFF it turns ON, if it was ON it turns OFF"
+                    "Directly toggle one or more types\n"
+                    f"• `{prefix}tp bug` • `{prefix}tp bug grass fire`"
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
                 name=f"`{prefix}rp`",
                 value=(
-                    "Open the interactive **Region Pings** menu with toggle buttons\n"
-                    f"**Aliases:** `{prefix}regionpings`, `{prefix}regionping`\n"
-                    "🟢 Green = enabled  •  ⚫ Grey = disabled\n"
-                    "All 9 regions available: Kanto, Johto, Hoenn, Sinnoh, Unova, Kalos, Alola, Galar, Paldea"
+                    "Open the interactive **Region Pings** menu\n"
+                    f"**Aliases:** `{prefix}regionpings`\n"
+                    "All 9 regions: Kanto, Johto, Hoenn, Sinnoh, Unova, Kalos, Alola, Galar, Paldea"
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
                 name=f"`{prefix}rp <regions>`",
-                value=(
-                    "Directly toggle one or more regions without opening the menu\n"
-                    f"**Examples:**\n"
-                    f"• `{prefix}rp kanto` — toggle Kanto\n"
-                    f"• `{prefix}rp kanto johto hoenn` — toggle multiple regions at once"
-                ),
-                inline=False
+                value=f"`{prefix}rp kanto` • `{prefix}rp kanto johto hoenn`",
+                inline=False,
             )
-
             embed.add_field(
-                name="🔕 AFK for Type/Region Pings",
-                value=(
-                    f"Use `{prefix}afk` and click the **TypePings** or **RegionPings** button\n"
-                    "to temporarily suppress these pings globally across all servers"
-                ),
-                inline=False
+                name="🔕 AFK for Type/Region",
+                value=f"Use `{prefix}afk` → **TypePings** / **RegionPings** buttons",
+                inline=False,
             )
-
             embed.add_field(
                 name="💡 How It Works",
                 value=(
-                    "• Type and region settings are **per-server** — set them separately in each server\n"
-                    "• When a Pokemon spawns, the bot checks its types/region against your preferences\n"
-                    "• You'll be mentioned in the prediction output under **Type Pings** or **Region Pings**\n"
-                    "• Uses `data/typeandregions.csv` for accurate type/region data"
+                    "• Settings are per-server\n"
+                    "• Bot checks types/region on every spawn and mentions you in the prediction"
                 ),
-                inline=False
+                inline=False,
             )
 
-        # Prediction category
+        # ── Prediction ────────────────────────────────────────────────
         elif category in ["prediction", "predict", "pred"]:
             embed = discord.Embed(
                 title="🔮 Prediction Commands",
-                description="Manually predict Pokemon from images or view auto-detection info",
-                color=EMBED_COLOR
+                description="Manually predict Pokémon from images or view auto-detection info",
+                color=EMBED_COLOR,
             )
-
             embed.add_field(
                 name=f"`{prefix}predict <image_url>`",
-                value=(
-                    "Predict Pokemon from image URL\n"
-                    f"**Aliases:** `{prefix}pred`, `{prefix}p`\n"
-                    f"**Example:** `{prefix}predict https://...`"
-                ),
-                inline=False
+                value=f"**Aliases:** `{prefix}pred`, `{prefix}p`",
+                inline=False,
             )
-
             embed.add_field(
                 name=f"`{prefix}predict` (reply to message)",
-                value=(
-                    "Reply to a message with an image to predict it\n"
-                    f"**Example:** Reply to image with `{prefix}predict`"
-                ),
-                inline=False
+                value="Reply to a message with an image to predict it",
+                inline=False,
             )
-
             embed.add_field(
                 name="🤖 Auto-Detection",
                 value=(
-                    "The bot automatically predicts Poketwo spawns and shows:\n"
-                    "```\n"
-                    "Charizard: 94.21%\n"
-                    "Shortest Name: Glurak       ← if enabled\n"
-                    "Rare Ping: @role\n"
-                    "Regional Pings: @role\n"
-                    "Shiny Hunters: @user\n"
-                    "Collectors: @user\n"
-                    "Type Pings: @user\n"
-                    "Region Pings: @user\n"
-                    "```"
+                    "The bot automatically predicts Poketwo spawns and shows collectors, "
+                    "hunters, type/region pings, and role pings."
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
                 name="📊 Dual Model System",
                 value=(
-                    "Bot uses two AI models for accuracy:\n"
                     "• **Primary model** (224×224) — runs on every spawn\n"
-                    "• **Secondary model** (224×224) — runs in parallel; used when primary confidence < 94%\n"
-                    "• If primary ≥ **94%** → primary result is used\n"
-                    "• If secondary ≥ **90%** → secondary result is used\n"
-                    "• If both are below threshold → primary result is used as fallback\n"
-                    "• Some Pokémon always prefer the secondary model result"
+                    "• **Secondary model** — runs when primary confidence < 94%\n"
+                    "• Primary ≥ 94% → primary used; Secondary ≥ 90% → secondary used; else primary as fallback"
                 ),
-                inline=False
+                inline=False,
             )
 
-        # Starboard category
+        # ── Starboard ─────────────────────────────────────────────────
         elif category in ["starboard", "star", "log"]:
             embed = discord.Embed(
-                title="⭐ Starboard Commands",
-                description="Configure automatic logging of rare catches, hatches, and unboxes to dedicated channels",
-                color=EMBED_COLOR
-            )
-
-            embed.add_field(
-                name=f"`{prefix}starboard-settings`",
-                value=(
-                    "View current starboard channel configuration"
+                title="⭐ Starboard",
+                description=(
+                    f"Starboard channels are configured under `{prefix}channel starboard`.\n"
+                    f"See `{prefix}help channels` for the full reference."
                 ),
-                inline=False
+                color=EMBED_COLOR,
             )
-
             embed.add_field(
-                name="📺 Channel Configuration (Admin Only)",
-                value="",
-                inline=False
-            )
-
-            embed.add_field(
-                name="Starboard For All",
+                name="Quick Reference",
                 value=(
-                    f"`{prefix}starboard-all #channel` - All catches, hatches, unboxes\n"
-                    f"Use `none` instead of #channel to remove"
+                    f"`{prefix}channel starboard settings` — view current starboard channels\n"
+                    f"`{prefix}channel starboard all [#ch | none]` — set all at once\n"
+                    f"`{prefix}channel starboard catch/egg/unbox [#ch | none]`\n"
+                    f"`{prefix}channel starboard shiny/gigantamax/highiv/lowiv [#ch | none]`\n"
+                    f"`{prefix}channel starboard missingno/milestone [#ch | none]`"
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
-                name="General Channels",
+                name="🔍 Manual Checking  *(Admin)*",
                 value=(
-                    f"`{prefix}starboard-catch #channel` - All catches\n"
-                    f"`{prefix}starboard-egg #channel` - All egg hatches\n"
-                    f"`{prefix}starboard-unbox #channel` - All box openings\n"
-                    f"Use `none` instead of #channel to remove"
+                    f"`{prefix}catchcheck` • `{prefix}eggcheck` • `{prefix}unboxcheck`\n"
+                    "Reply to a message or provide a message ID."
                 ),
-                inline=False
+                inline=False,
             )
-
-            embed.add_field(
-                name="Specific Criteria Channels",
-                value=(
-                    f"`{prefix}starboard-shiny #channel` - Shiny catches/hatches/unboxes\n"
-                    f"`{prefix}starboard-gigantamax #channel` - Gigantamax catches/hatches/unboxes\n"
-                    f"`{prefix}starboard-highiv #channel` - High IV (≥90%)\n"
-                    f"`{prefix}starboard-lowiv #channel` - Low IV (≤10%)\n"
-                    f"`{prefix}starboard-missingno #channel` - MissingNo catches\n"
-                    f"`{prefix}starboard-milestone #channel` - Milestone catches (1000th etc)\n"
-                    f"Use `none` instead of #channel to remove"
-                ),
-                inline=False
-            )
-
-            embed.add_field(
-                name="🔍 Manual Checking (Admin Only)",
-                value=(
-                    f"`{prefix}catchcheck` - Manually check a catch message\n"
-                    f"`{prefix}eggcheck` - Manually check an egg hatch\n"
-                    f"`{prefix}unboxcheck` - Manually check a box opening\n"
-                    "Use by replying to a message or providing message ID"
-                ),
-                inline=False
-            )
-
             embed.add_field(
                 name="📋 What Gets Logged?",
                 value=(
-                    "• **Shiny** catches/hatches/unboxes\n"
-                    "• **Gigantamax** catches/hatches/unboxes\n"
-                    "• **High IV** (≥90%) or **Low IV** (≤10%)\n"
-                    "• **MissingNo** catches\n"
-                    "• **Combinations** (e.g., Shiny + High IV)\n\n"
-                    "Note: A Pokemon meeting multiple criteria will be sent to multiple channels!"
+                    "Shiny / Gigantamax / High IV / Low IV / MissingNo / Milestone catches, hatches, unboxes.\n"
+                    "A Pokémon meeting multiple criteria is sent to multiple channels."
                 ),
-                inline=False
+                inline=False,
             )
 
-        # Helpful commands
+        # ── Helpful ───────────────────────────────────────────────────
         elif category in ["helpful", "util", "utils", "tools"]:
             embed = discord.Embed(
                 title="🔍 Helpful Commands",
                 description="Useful utility commands for Pokétwo players",
-                color=EMBED_COLOR
+                color=EMBED_COLOR,
             )
-
             embed.add_field(
                 name=f"`{prefix}spawnrate <pokemon>` / `{prefix}sr <pokemon>`",
-                value=(
-                    "Show the wild spawn rate for a Pokémon\n"
-                    f"**Aliases:** `{prefix}sr`\n"
-                    f"**Examples:**\n"
-                    f"• `{prefix}sr geodude`\n"
-                    f"• `{prefix}sr Garchomp`\n"
-                    "Also available as a slash command: `/spawnrate`"
-                ),
-                inline=False
+                value="Show the wild spawn rate for a Pokémon",
+                inline=False,
             )
-
             embed.add_field(
                 name=f"`{prefix}shinyrate [chain] [target%]` / `{prefix}shr`",
                 value=(
-                    "Show per-encounter shiny rates at a given chain, or calculate what chain you need to hit a target chance — both with and without Shiny Charm\n"
-                    f"**Aliases:** `{prefix}shr`\n"
-                    f"**Examples:**\n"
-                    f"• `{prefix}shr` — show usage + rates at chain 0\n"
-                    f"• `{prefix}shr 50` — shiny rates at chain 50\n"
-                    f"• `{prefix}shr 89%` — chain needed for 89% per-encounter chance\n"
-                    f"• `{prefix}shr 50 89%` — both at once\n"
-                    "Also available as a slash command: `/shinyrate`"
+                    "Per-encounter shiny rate at a given chain, or chain needed for a target %\n"
+                    f"• `{prefix}shr 50` — rates at chain 50\n"
+                    f"• `{prefix}shr 89%` — chain needed for 89%\n"
+                    f"• `{prefix}shr 50 89%` — both at once"
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
                 name="🔎 Hint Solver (Automatic)",
                 value=(
-                    "When Pokétwo sends a hint message, the bot automatically replies with the matching Pokémon name(s)\n"
-                    "• Supports hints in **all languages** (English, Japanese, etc.)\n"
-                    "• If multiple Pokémon match, all candidates are listed\n"
-                    "• No command needed — just wait for Pokétwo's hint!"
+                    "When Pokétwo sends a hint the bot automatically replies with matching Pokémon name(s).\n"
+                    "Supports all languages. No command needed."
                 ),
-                inline=False
+                inline=False,
             )
 
-        # Owner commands
+        # ── Owner ─────────────────────────────────────────────────────
         elif category in ["owner", "admin", "botowner"]:
             if not is_owner:
                 await ctx.reply("❌ This category is only available to the bot owner.", mention_author=False)
@@ -709,107 +449,49 @@ class Help(commands.Cog):
             embed = discord.Embed(
                 title="👑 Owner Commands",
                 description="Bot owner only commands for global settings",
-                color=0xFFD700  # Gold color
+                color=0xFFD700,
             )
-
             embed.add_field(
-                name=f"`{prefix}loadmodel`",
+                name=f"`{prefix}loadmodel` / `{prefix}unloadmodel` / `{prefix}reloadmodel`",
                 value=(
-                    "Download (if needed) and load the AI prediction models into RAM\n"
-                    f"**Aliases:** `{prefix}lm`, `{prefix}modelload`, `{prefix}startmodel`\n"
-                    "Run this before starting an incense session\n"
-                    "⚠️ Increases memory usage significantly"
+                    "Load, unload, or force-re-download the AI prediction models.\n"
+                    f"**Aliases:** `{prefix}lm`, `{prefix}um`, `{prefix}rm`"
                 ),
-                inline=False
+                inline=False,
             )
-
-            embed.add_field(
-                name=f"`{prefix}unloadmodel`",
-                value=(
-                    "Unload the AI prediction models from RAM\n"
-                    f"**Aliases:** `{prefix}um`, `{prefix}modelunload`, `{prefix}stopmodel`\n"
-                    "Run this after finishing an incense session to free memory"
-                ),
-                inline=False
-            )
-
-            embed.add_field(
-                name=f"`{prefix}reloadmodel`",
-                value=(
-                    "Force re-download the latest models from GitHub and reload into RAM\n"
-                    f"**Aliases:** `{prefix}rm`, `{prefix}modelreload`, `{prefix}refreshmodel`\n"
-                    "Use this when model files have been updated on GitHub"
-                ),
-                inline=False
-            )
-
             embed.add_field(
                 name=f"`{prefix}modelstatus`",
-                value=(
-                    "Show current model load state, RAM usage, and prediction stats\n"
-                    f"**Aliases:** `{prefix}ms`, `{prefix}modelinfo`, `{prefix}modelsinfo`"
-                ),
-                inline=False
+                value="Show model load state, RAM usage, and prediction stats",
+                inline=False,
             )
-
             embed.add_field(
                 name=f"`{prefix}reloadsr`",
-                value=(
-                    "Force-reload the spawn rate data from the remote CSV\n"
-                    "Useful after the spawn rate sheet has been updated"
-                ),
-                inline=False
+                value="Force-reload spawn rate data from the remote CSV",
+                inline=False,
             )
-
             embed.add_field(
-                name=f"`{prefix}set-low-prediction-channel #channel`",
+                name=f"`{prefix}channel lowpred #channel`",
                 value=(
-                    "Set global channel for low confidence predictions (< 90%)\n"
-                    f"**Aliases:** `{prefix}setlowpred`, `{prefix}lowpredchannel`\n"
-                    f"**Example:** `{prefix}set-low-prediction-channel #low-predictions`"
+                    "Set global channel for low-confidence predictions (< 90%)\n"
+                    f"**Aliases:** `{prefix}channel low-prediction`"
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
-                name=f"`{prefix}set-secondary-model-channel #channel`",
+                name=f"`{prefix}channel secondary #channel`",
                 value=(
                     "Set global channel for secondary model logs\n"
-                    f"**Aliases:** `{prefix}setsecondary`, `{prefix}secondarychannel`\n"
-                    f"**Example:** `{prefix}set-secondary-model-channel #secondary-logs`\n"
-                    "Logs when the secondary model is used for predictions"
+                    f"**Aliases:** `{prefix}channel secondary-model`"
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
-                name=f"`{prefix}starboard-set-global-catch #channel`",
-                value=(
-                    "Set global catch starboard channel (across all servers)\n"
-                    f"**Aliases:** `{prefix}sbsetglobalcatch`"
-                ),
-                inline=False
+                name=f"`{prefix}channel global-starboard catch/egg/unbox #channel`",
+                value="Set global starboard channels (across all servers)",
+                inline=False,
             )
 
-            embed.add_field(
-                name=f"`{prefix}starboard-set-global-egg #channel`",
-                value=(
-                    "Set global egg starboard channel (across all servers)\n"
-                    f"**Aliases:** `{prefix}sbsetglobalegg`"
-                ),
-                inline=False
-            )
-
-            embed.add_field(
-                name=f"`{prefix}starboard-set-global-unbox #channel`",
-                value=(
-                    "Set global unbox starboard channel (across all servers)\n"
-                    f"**Aliases:** `{prefix}sbsetglobalunbox`"
-                ),
-                inline=False
-            )
-
-        # Incense commands
+        # ── Incense ───────────────────────────────────────────────────
         elif category in ["incense", "inc", "incenses"]:
             embed = discord.Embed(
                 title="🔥 Incense Commands",
@@ -817,246 +499,162 @@ class Help(commands.Cog):
                     "Automatically restricts Poketwo the moment an Incense is purchased "
                     "in a monitored category channel — so your spawns stay exclusive."
                 ),
-                color=EMBED_COLOR
+                color=EMBED_COLOR,
             )
-
             embed.add_field(
                 name="⚙️ Setup  *(Manage Server)*",
                 value=(
                     f"`{prefix}inc toggle` — Enable/disable the incense watcher\n"
-                    f"`{prefix}inc cat add SPAWN1 SPAWN2` — Add multiple categories to monitor\n"
-                    f"`{prefix}inc cat add \"Incense 1\" \"Incense 2\"` — Names with spaces use quotes\n"
+                    f"`{prefix}inc cat add SPAWN1 SPAWN2` — Add categories to monitor\n"
                     f"`{prefix}inc cat remove <name>` — Stop monitoring a category\n"
-                    f"`{prefix}inc cat list` — View all monitored categories & channel counts"
+                    f"`{prefix}inc cat list` — View monitored categories & channel counts"
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
                 name="⏸️ Pause  *(Allowed Role required)*",
                 value=(
                     f"`{prefix}inc pause` / `{prefix}inc p` — Pause **this** channel\n"
-                    f"`{prefix}inc pause all` / `{prefix}inc p all` — Pause ALL monitored categories\n"
-                    f"`{prefix}incense pause` also works"
+                    f"`{prefix}inc pause all` — Pause ALL monitored categories"
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
                 name="▶️ Resume  *(Allowed Role required)*",
                 value=(
                     f"`{prefix}inc resume` / `{prefix}inc r` — Resume **this** channel\n"
-                    f"`{prefix}inc resume all` / `{prefix}inc r all` — Resume ALL paused channels\n"
-                    f"`{prefix}incense resume` also works"
+                    f"`{prefix}inc resume all` — Resume ALL paused channels"
                 ),
-                inline=False
+                inline=False,
             )
-
-            embed.add_field(
-                name="📋 Status",
-                value=f"`{prefix}inc list` — View paused and active channels across monitored categories",
-                inline=False
-            )
-
+            embed.add_field(name="📋 Status", value=f"`{prefix}inc list` — View paused and active channels", inline=False)
             embed.add_field(
                 name="🔐 Allowed Roles  *(Manage Server)*",
                 value=(
-                    f"`{prefix}inc allowedroles` / `{prefix}inc ar` — List all roles allowed to pause/resume\n"
-                    f"`{prefix}inc allowedroles add @Role` — Add a role (also accepts role ID)\n"
+                    f"`{prefix}inc allowedroles` — List allowed roles\n"
+                    f"`{prefix}inc allowedroles add @Role` — Add a role\n"
                     f"`{prefix}inc allowedroles remove @Role` — Remove a role\n"
-                    f"`{prefix}inc allowedroles clear` — Remove all allowed roles"
+                    f"`{prefix}inc allowedroles clear` — Remove all"
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
                 name="🤖 How It Works",
                 value=(
                     "• Poketwo sends `You purchased an Incense for X shards!`\n"
-                    "• Bot instantly restricts Poketwo in **that specific channel** only\n"
-                    "• `pause all` / `resume all` operates at the **category level** for speed\n"
+                    "• Bot instantly restricts Poketwo in that specific channel only\n"
                     f"• Use `{prefix}inc help` for a quick in-chat reference"
                 ),
-                inline=False
+                inline=False,
             )
 
-        # Captcha commands
+        # ── Captcha ───────────────────────────────────────────────────
         elif category in ["captcha", "cap", "verify"]:
             embed = discord.Embed(
-                title="🔐 Captcha Commands",
+                title="🔐 Captcha Alerts",
                 description=(
                     "Automatically alerts users in a designated channel when Pokétwo asks them to verify. "
-                    "Feature is disabled per-server until a captcha channel is set."
+                    "Disabled per-server until a captcha channel is configured."
                 ),
-                color=EMBED_COLOR
+                color=EMBED_COLOR,
             )
-
             embed.add_field(
-                name=f"`{prefix}captcha-channel #channel`",
+                name=f"`{prefix}channel captcha #channel`  *(Admin)*",
                 value=(
-                    "Set the channel where captcha alerts will be sent **(Admin only)**\n"
-                    f"**Aliases:** `{prefix}captchachannel`, `{prefix}setcaptcha`\n"
-                    f"**Example:** `{prefix}captcha-channel #alerts`"
+                    "Set the channel where captcha alerts will be sent\n"
+                    f"• `{prefix}channel captcha #alerts` — set alert channel\n"
+                    f"• `{prefix}channel captcha` (no args) — clear / disable"
                 ),
-                inline=False
+                inline=False,
             )
-
-            embed.add_field(
-                name=f"`{prefix}captcha-channel` (no arguments)",
-                value=(
-                    "Clear the captcha channel and **disable** captcha alerts for this server **(Admin only)**"
-                ),
-                inline=False
-            )
-
             embed.add_field(
                 name="🤖 How It Works",
                 value=(
                     "• Bot watches every channel for Pokétwo's captcha message\n"
-                    "• When detected, pings the flagged user in the captcha alert channel\n"
-                    "• Alert includes a **Verify** button linking directly to their captcha URL\n"
-                    "• **5-minute cooldown** per user — won't re-ping within 5 minutes for repeated detections\n"
-                    "• If no captcha channel is set, the feature is silently disabled"
+                    "• When detected, pings the flagged user in the alert channel\n"
+                    "• Alert includes a **Verify** button linking to their captcha URL\n"
+                    "• **5-minute cooldown** per user — won't re-ping within 5 minutes"
                 ),
-                inline=False
+                inline=False,
             )
 
-        # Reserve commands
+        # ── Reserve ───────────────────────────────────────────────────
         elif category in ["reserve", "res", "r"]:
             embed = discord.Embed(
                 title="💾 Reserve Commands",
-                description="Server-specific Pokémon reservation system. Users can reserve Pokemon they want to collect!",
-                color=EMBED_COLOR
+                description="Server-specific Pokémon reservation system.",
+                color=EMBED_COLOR,
             )
-
+            embed.add_field(name="📋 View",     value=f"`{prefix}r list` • `{prefix}r list @user`",                                 inline=False)
+            embed.add_field(name="➕ Remove",   value=f"`{prefix}r remove p <pokemon>` • `{prefix}r remove cat <cat>` • `{prefix}r clear`", inline=False)
             embed.add_field(
-                name="📋 View Reserves",
-                value=(
-                    f"`{prefix}r list` - View all reserves in the server\n"
-                    f"`{prefix}r list @user` - View a specific user's reserves"
-                ),
-                inline=False
+                name="🔐 Admin: Add",
+                value=f"`{prefix}r add p @user <pokemon>` • `{prefix}r add cat @user <cat>`",
+                inline=False,
             )
-
             embed.add_field(
-                name="➕ Remove from Your Reserves",
-                value=(
-                    f"`{prefix}r remove p <pokemon,...>` - Remove Pokemon\n"
-                    f"`{prefix}r remove cat <category>` - Remove category\n"
-                    f"`{prefix}r clear` - Clear all your reserves\n"
-                    f"**Aliases:** `pokemon`/`poke`/`p` • `category`/`cat`"
-                ),
-                inline=False
+                name="🔐 Admin: Remove / Clear",
+                value=f"`{prefix}r remove p @user <pokemon>` • `{prefix}r clear @user` • `{prefix}r clear --all`",
+                inline=False,
             )
-
-            embed.add_field(
-                name="🔐 Admin: Add to User's Reserves",
-                value=(
-                    f"`{prefix}r add p @user <pokemon,...>` - Add Pokemon\n"
-                    f"`{prefix}r add cat @user <category>` - Add category"
-                ),
-                inline=False
-            )
-
-            embed.add_field(
-                name="🔐 Admin: Remove from User's Reserves",
-                value=(
-                    f"`{prefix}r remove p @user <pokemon,...>` - Remove Pokemon\n"
-                    f"`{prefix}r remove cat @user <category>` - Remove category\n"
-                    f"`{prefix}r clear @user` - Clear user's reserves\n"
-                    f"`{prefix}r clear --all` - Clear entire server"
-                ),
-                inline=False
-            )
-
             embed.add_field(
                 name="🛠️ Admin: Allowed Roles",
-                value=(
-                    f"`{prefix}r allowedroles` - View allowed roles\n"
-                    f"`{prefix}r allowedroles add <@role>` - Add role\n"
-                    f"`{prefix}r allowedroles remove <@role>` - Remove role"
-                ),
-                inline=False
+                value=f"`{prefix}r allowedroles` • `{prefix}r allowedroles add @role` • `{prefix}r allowedroles remove @role`",
+                inline=False,
             )
 
-        # All commands
+        # ── All commands ──────────────────────────────────────────────
         elif category in ["all", "commands"]:
             embed = discord.Embed(
                 title="📚 All Commands",
                 description="Complete list of all bot commands",
-                color=EMBED_COLOR
+                color=EMBED_COLOR,
             )
-
             embed.add_field(
                 name="📦 Collection",
-                value=(
-                    f"`{prefix}cl add` • `{prefix}cl remove [--sr <rate>] [--user @u]` • `{prefix}cl list`\n"
-                    f"`{prefix}cl raw [--sr <rate>]` • `{prefix}cl clear`"
-                ),
-                inline=False
+                value=f"`{prefix}cl add` • `{prefix}cl remove` • `{prefix}cl list` • `{prefix}cl raw` • `{prefix}cl clear`",
+                inline=False,
             )
-
             embed.add_field(
                 name="🗂️ Category",
                 value=(
-                    f"`{prefix}cat add` • `{prefix}cat remove` • `{prefix}cat list` • `{prefix}cat info`\n"
-                    f"**Admin:** `{prefix}cat create` • `{prefix}cat edit` • `{prefix}cat delete`\n"
-                    f"**Admin:** `{prefix}cat addpokemon` • `{prefix}cat removepokemon`"
+                    f"`{prefix}cat add/remove/list/info`\n"
+                    f"**Admin:** `{prefix}cat create/edit/delete/addpokemon/removepokemon/defaults`"
                 ),
-                inline=False
+                inline=False,
             )
-
-            embed.add_field(
-                name="✨ Shiny Hunt",
-                value=f"`{prefix}sh` • `{prefix}sh <pokemon>` • `{prefix}sh clear`",
-                inline=False
-            )
-
-            embed.add_field(
-                name="🔷 Type & Region Pings",
-                value=(
-                    f"`{prefix}tp` • `{prefix}tp <types>`\n"
-                    f"`{prefix}rp` • `{prefix}rp <regions>`"
-                ),
-                inline=False
-            )
-
+            embed.add_field(name="✨ Shiny Hunt",     value=f"`{prefix}sh` • `{prefix}sh <pokemon>` • `{prefix}sh clear`",                     inline=False)
+            embed.add_field(name="🔷 Type & Region",  value=f"`{prefix}tp` • `{prefix}tp <types>` • `{prefix}rp` • `{prefix}rp <regions>`",    inline=False)
             embed.add_field(
                 name="⚙️ Settings",
                 value=(
-                    f"`{prefix}afk` • `{prefix}server-settings`\n"
-                    f"`{prefix}clear-pings [@user]`\n"
-                    f"**Admin:** `{prefix}rare-role` • `{prefix}regional-role` • `{prefix}toggle best_name` • `{prefix}toggle only_pings`\n"
-                    f"**Admin:** `{prefix}captcha-channel [#channel]`"
+                    f"`{prefix}afk` • `{prefix}server-settings` • `{prefix}clear-pings [@user]`\n"
+                    f"**Admin:** `{prefix}toggle <feature>` • `{prefix}only-pings`"
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
-                name="🔮 Prediction",
-                value=f"`{prefix}predict`",
-                inline=False
+                name="🎭 Roles  *(Admin)*",
+                value=f"`{prefix}role` • `{prefix}role rare [@role]` • `{prefix}role regional [@role]`",
+                inline=False,
             )
-
             embed.add_field(
-                name="⭐ Starboard Settings",
+                name="📺 Channels  *(Admin / Owner)*",
                 value=(
-                    f"`{prefix}starboard-settings` • `{prefix}starboard-all`\n"
-                    f"`{prefix}starboard-catch/egg/unbox`\n"
-                    f"`{prefix}starboard-shiny/gigantamax/highiv/lowiv/milestone/missingno`"
+                    f"`{prefix}channel settings`\n"
+                    f"`{prefix}channel starboard all/catch/egg/unbox/shiny/gigantamax/highiv/lowiv/missingno/milestone [#ch | none]`\n"
+                    f"`{prefix}channel captcha [#ch]`\n"
+                    f"**Owner:** `{prefix}channel lowpred #ch` • `{prefix}channel secondary #ch`\n"
+                    f"**Owner:** `{prefix}channel global-starboard catch/egg/unbox #ch`"
                 ),
-                inline=False
+                inline=False,
             )
-
+            embed.add_field(name="🔮 Prediction",     value=f"`{prefix}predict`",                                                              inline=False)
             embed.add_field(
                 name="🔍 Helpful",
-                value=(
-                    f"`{prefix}sr <pokemon>` • `{prefix}shr [chain] [target%]`\n"
-                    "Hint solver (automatic — no command needed)"
-                ),
-                inline=False
+                value=f"`{prefix}sr <pokemon>` • `{prefix}shr [chain] [target%]`\nHint solver (automatic — no command needed)",
+                inline=False,
             )
-
             embed.add_field(
                 name="🔥 Incense",
                 value=(
@@ -1064,57 +662,48 @@ class Help(commands.Cog):
                     f"`{prefix}inc pause [all]` • `{prefix}inc resume [all]` • `{prefix}inc list`\n"
                     f"**Admin:** `{prefix}inc allowedroles` • `{prefix}inc ar add/remove/clear`"
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
-                name="🔐 Captcha",
-                value=f"**Admin:** `{prefix}captcha-channel [#channel]`",
-                inline=False
+                name="🔐 Captcha  *(Admin)*",
+                value=f"`{prefix}channel captcha [#channel]`",
+                inline=False,
             )
-
             embed.add_field(
                 name="💾 Reserve",
                 value=(
                     f"`{prefix}r list` • `{prefix}r list @user`\n"
-                    f"`{prefix}r remove p` • `{prefix}r remove cat` • `{prefix}r clear`\n"
-                    f"**Admin:** `{prefix}r add p @user` • `{prefix}r add cat @user` • `{prefix}r remove p @user`\n"
-                    f"**Admin:** `{prefix}r clear @user` • `{prefix}r clear --all`"
+                    f"`{prefix}r remove p/cat` • `{prefix}r clear`\n"
+                    f"**Admin:** `{prefix}r add p/cat @user` • `{prefix}r remove p/cat @user` • `{prefix}r clear @user` • `{prefix}r clear --all`"
                 ),
-                inline=False
+                inline=False,
             )
-
             embed.add_field(
-                name="🔍 Starboard Manual Check",
+                name="🔍 Starboard Manual Check  *(Admin)*",
                 value=f"`{prefix}catchcheck` • `{prefix}eggcheck` • `{prefix}unboxcheck`",
-                inline=False
+                inline=False,
             )
-
             if is_owner:
                 embed.add_field(
                     name="👑 Owner",
                     value=(
                         f"`{prefix}loadmodel` • `{prefix}unloadmodel` • `{prefix}reloadmodel`\n"
                         f"`{prefix}modelstatus` • `{prefix}reloadsr`\n"
-                        f"`{prefix}set-low-prediction-channel`\n"
-                        f"`{prefix}set-secondary-model-channel`\n"
-                        f"`{prefix}starboard-set-global-catch/egg/unbox`"
+                        f"`{prefix}channel lowpred #ch` • `{prefix}channel secondary #ch`\n"
+                        f"`{prefix}channel global-starboard catch/egg/unbox #ch`"
                     ),
-                    inline=False
+                    inline=False,
                 )
-
-            embed.add_field(
-                name="ℹ️ Info",
-                value=f"`{prefix}help` • `{prefix}about` • `{prefix}ping`",
-                inline=False
-            )
+            embed.add_field(name="ℹ️ Info", value=f"`{prefix}help` • `{prefix}about` • `{prefix}ping`", inline=False)
 
         else:
             await ctx.reply(
                 f"❌ Unknown category: `{category}`\n"
-                f"Available categories: `collection`, `category`, `hunt`, `pings`, `settings`, `prediction`, `starboard`, `helpful`, `incense`, `captcha`, `reserve`, {'`owner`, ' if is_owner else ''}`all`\n"
+                f"Available: `collection`, `category`, `hunt`, `pings`, `settings`, `roles`, `channels`, "
+                f"`prediction`, `starboard`, `helpful`, `incense`, `captcha`, `reserve`, "
+                f"{'`owner`, ' if is_owner else ''}`all`\n"
                 f"Use `{prefix}help` to see the main help menu.",
-                mention_author=False
+                mention_author=False,
             )
             return
 
@@ -1127,27 +716,24 @@ class Help(commands.Cog):
         prefix = BOT_PREFIX[0]
 
         embed = discord.Embed(
-            title="ℹ️ About Pokemon Helper Bot",
-            description="A comprehensive Pokemon collection and prediction bot for Poketwo",
-            color=EMBED_COLOR
+            title="ℹ️ About Pokémon Helper Bot",
+            description="A comprehensive Pokémon collection and prediction bot for Poketwo",
+            color=EMBED_COLOR,
         )
-
         embed.add_field(
             name="✨ Key Features",
             value=(
-                "• 📦 **Collection Management** - Track and get pinged for Pokemon you collect\n"
-                "• 🗂️ **Category System** - Bulk add Pokemon to collection\n"
-                "• ✨ **Shiny Hunting** - Get notified when your hunt target spawns\n"
-                "• 🔷 **Type & Region Pings** - Get pinged by Pokemon type or region\n"
-                "• 🔮 **Dual Model Prediction** - Automatically identifies Poketwo spawns\n"
-                "• ⭐ **Starboard Logging** - Log rare catches, hatches, and unboxes\n"
-                "• 🎯 **Smart Pings** - Collectors, hunters, type, region, and role-based pings\n"
-                "• 🔕 **AFK Mode** - Disable pings when you're away\n"
-                "• 🏷️ **Best Name** - Optionally show shortest known name per prediction"
+                "• 📦 **Collection Management** — Track and get pinged for Pokémon you collect\n"
+                "• 🗂️ **Category System** — Bulk add Pokémon to collection\n"
+                "• ✨ **Shiny Hunting** — Get notified when your hunt target spawns\n"
+                "• 🔷 **Type & Region Pings** — Get pinged by Pokémon type or region\n"
+                "• 🔮 **Dual Model Prediction** — Automatically identifies Poketwo spawns\n"
+                "• ⭐ **Starboard Logging** — Log rare catches, hatches, and unboxes\n"
+                "• 🔕 **AFK Mode** — Disable pings when you're away\n"
+                "• 🏷️ **Best Name** — Optionally show shortest known name per prediction"
             ),
-            inline=False
+            inline=False,
         )
-
         embed.add_field(
             name="📊 Statistics",
             value=(
@@ -1155,65 +741,40 @@ class Help(commands.Cog):
                 f"**Users:** {sum(g.member_count for g in self.bot.guilds)}\n"
                 f"**Commands:** {len(self.bot.commands)}"
             ),
-            inline=True
+            inline=True,
         )
-
         embed.add_field(
             name="⚙️ Technical",
             value=(
                 f"**Prefix:** {', '.join(BOT_PREFIX)}\n"
-                f"**Library:** discord.py\n"
-                f"**Database:** MongoDB\n"
-                f"**AI Models:** Dual CNN (224×224 primary + 224×224 secondary)"
+                "**Library:** discord.py\n"
+                "**Database:** MongoDB\n"
+                "**AI Models:** Dual CNN (224×224)"
             ),
-            inline=True
+            inline=True,
         )
-
         embed.add_field(
             name="🚀 Getting Started",
             value=f"Use `{prefix}help` to see all available commands and features!",
-            inline=False
+            inline=False,
         )
-
-        embed.add_field(
-            name="🔗 Quick Links",
-            value=(
-                f"• `{prefix}help collection` - Set up your collection\n"
-                f"• `{prefix}help category` - Bulk collection management\n"
-                f"• `{prefix}help starboard` - Configure starboard logging\n"
-                f"• `{prefix}afk` - Manage your ping preferences"
-            ),
-            inline=False
-        )
-
-        embed.set_footer(text=f"Made with ❤️ for the Poketwo community")
-
+        embed.set_footer(text="Made with ❤️ for the Poketwo community")
         await ctx.reply(embed=embed, mention_author=False)
 
     @commands.command(name="ping", aliases=["latency", "pong"])
     async def ping_command(self, ctx):
         """Check bot's latency"""
         import time
-
-        # Measure API latency
         api_latency = round(self.bot.latency * 1000)
-
-        # Measure response time
         start = time.perf_counter()
         message = await ctx.reply("🏓 Pinging...", mention_author=False)
         end = time.perf_counter()
         response_time = round((end - start) * 1000)
 
-        # Update with full info
-        embed = discord.Embed(
-            title="🏓 Pong!",
-            color=EMBED_COLOR
-        )
-
-        embed.add_field(name="API Latency", value=f"{api_latency}ms", inline=True)
+        embed = discord.Embed(title="🏓 Pong!", color=EMBED_COLOR)
+        embed.add_field(name="API Latency",   value=f"{api_latency}ms",   inline=True)
         embed.add_field(name="Response Time", value=f"{response_time}ms", inline=True)
 
-        # Status indicator
         if api_latency < 100:
             status = "🟢 Excellent"
         elif api_latency < 200:
@@ -1225,7 +786,6 @@ class Help(commands.Cog):
 
         embed.add_field(name="Status", value=status, inline=True)
         embed.set_footer(text=f"Requested by {ctx.author.display_name}")
-
         await message.edit(content=None, embed=embed)
 
     @commands.command(name="commands", aliases=["cmds"])
@@ -1234,10 +794,10 @@ class Help(commands.Cog):
         await ctx.invoke(self.help_command, category="all")
 
     # ------------------------------------------------------------------
-    # Slash Commands  (registered automatically with the cog)
+    # Slash Commands
     # ------------------------------------------------------------------
     @app_commands.command(name="help", description="Show help information for the bot")
-    @app_commands.describe(category="Category: collection, category, hunt, pings, settings, prediction, starboard, helpful, incense, captcha, reserve, all")
+    @app_commands.describe(category="Category: collection, category, hunt, pings, settings, roles, channels, prediction, starboard, helpful, incense, captcha, reserve, all")
     async def slash_help(self, interaction: discord.Interaction, category: str = None):
         ctx = await commands.Context.from_interaction(interaction)
         await self.help_command(ctx, category=category)
