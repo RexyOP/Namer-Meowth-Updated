@@ -46,6 +46,30 @@ class AFKView(discord.ui.View):
         rgn_btn.callback = self.toggle_region_ping_afk
         self.add_item(rgn_btn)
 
+        # ── Row 2: bulk buttons ──────────────────────────────────────────
+        all_afk = all([collection_afk, shiny_hunt_afk, type_ping_afk, region_ping_afk])
+        all_on  = not any([collection_afk, shiny_hunt_afk, type_ping_afk, region_ping_afk])
+
+        disable_all_btn = discord.ui.Button(
+            label="AFK All",
+            style=discord.ButtonStyle.danger,
+            custom_id="afk_disable_all",
+            disabled=all_afk,   # grey out if already fully AFK
+            row=1,
+        )
+        disable_all_btn.callback = self.disable_all
+        self.add_item(disable_all_btn)
+
+        enable_all_btn = discord.ui.Button(
+            label="Enable All",
+            style=discord.ButtonStyle.success,
+            custom_id="afk_enable_all",
+            disabled=all_on,    # grey out if already all active
+            row=1,
+        )
+        enable_all_btn.callback = self.enable_all
+        self.add_item(enable_all_btn)
+
     def _create_embed(self, collection_afk, shiny_hunt_afk, type_ping_afk, region_ping_afk):
         def _dot(afk):
             return Emojis.GREY_DOT if afk else Emojis.GREEN_DOT
@@ -108,6 +132,32 @@ class AFKView(discord.ui.View):
         new_type = await self.cog.db.is_type_ping_afk(self.user_id)
         self.update_buttons(new_col, new_shy, new_type, new_rgn)
         await interaction.response.edit_message(embed=self._create_embed(new_col, new_shy, new_type, new_rgn), view=self)
+
+    async def disable_all(self, interaction: discord.Interaction):
+        """Set AFK = True on all 4 types at once."""
+        if not await self._check_user(interaction):
+            return
+        await asyncio.gather(
+            self.cog.db.set_collection_afk(self.user_id, True),
+            self.cog.db.set_shiny_hunt_afk(self.user_id, True),
+            self.cog.db.set_type_ping_afk(self.user_id, True),
+            self.cog.db.set_region_ping_afk(self.user_id, True),
+        )
+        self.update_buttons(True, True, True, True)
+        await interaction.response.edit_message(embed=self._create_embed(True, True, True, True), view=self)
+
+    async def enable_all(self, interaction: discord.Interaction):
+        """Set AFK = False on all 4 types at once."""
+        if not await self._check_user(interaction):
+            return
+        await asyncio.gather(
+            self.cog.db.set_collection_afk(self.user_id, False),
+            self.cog.db.set_shiny_hunt_afk(self.user_id, False),
+            self.cog.db.set_type_ping_afk(self.user_id, False),
+            self.cog.db.set_region_ping_afk(self.user_id, False),
+        )
+        self.update_buttons(False, False, False, False)
+        await interaction.response.edit_message(embed=self._create_embed(False, False, False, False), view=self)
 
     async def on_timeout(self):
         self.clear_items()
