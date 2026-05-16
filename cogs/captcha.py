@@ -1,9 +1,11 @@
-"""Captcha alert cog — pings users in a designated channel when Pokétwo asks them to verify."""
+"""Captcha alert cog — pings users in a designated channel when Pokétwo asks them to verify.
+
+Channel configuration has been moved to channel_config.py → p!channel captcha #channel
+"""
 import re
 import time
 import asyncio
 import discord
-from discord import app_commands
 from discord.ext import commands
 import config
 
@@ -46,6 +48,10 @@ class Captcha(commands.Cog):
     Watches every message in all guilds.
     When Pokétwo sends a captcha challenge, pings the affected user
     in the server's configured captcha alert channel.
+
+    Channel setup is handled by the ChannelConfig cog:
+        p!channel captcha #channel   → set captcha alert channel
+        p!channel captcha             → clear / disable
     """
 
     def __init__(self, bot: commands.Bot):
@@ -147,57 +153,6 @@ class Captcha(commands.Cog):
             )
         except discord.Forbidden:
             pass  # Bot lacks permission to send in the captcha channel
-
-    # ── Commands ─────────────────────────────────────────────────────
-
-    @commands.command(name="captcha-channel", aliases=["captchachannel", "setcaptcha"])
-    @commands.has_permissions(administrator=True)
-    async def captcha_channel_command(self, ctx, channel: discord.TextChannel = None):
-        """Set or clear the captcha alert channel for this server (Admin only).
-
-        Examples:
-            p!captcha-channel #alerts   → set #alerts as the captcha channel
-            p!captcha-channel           → clear the captcha channel (disables alerts)
-        """
-        if channel is None:
-            # Clear the channel → disable captcha alerts
-            await self.db.set_captcha_channel(ctx.guild.id, None)
-            embed = discord.Embed(
-                description="🔕 Captcha alert channel cleared. Captcha alerts are now **disabled** for this server.",
-                color=config.EMBED_COLOR,
-            )
-        else:
-            await self.db.set_captcha_channel(ctx.guild.id, channel.id)
-            embed = discord.Embed(
-                description=(
-                    f"✅ Captcha alert channel set to {channel.mention}.\n"
-                    f"Users will be pinged there when Pokétwo asks them to verify."
-                ),
-                color=config.EMBED_COLOR,
-            )
-
-        await ctx.reply(embed=embed, mention_author=False)
-
-    @captcha_channel_command.error
-    async def captcha_channel_error(self, ctx, error):
-        if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False)
-        elif isinstance(error, commands.BadArgument):
-            await ctx.reply("❌ Invalid channel. Mention a text channel or use its ID.", mention_author=False)
-
-    # ── Slash ─────────────────────────────────────────────────────────
-
-    @app_commands.command(
-        name="captcha-channel",
-        description="Set or clear the captcha alert channel (Admin only). Omit to disable."
-    )
-    @app_commands.describe(channel="The channel to send captcha alerts in. Omit to clear/disable.")
-    @app_commands.default_permissions(administrator=True)
-    async def slash_captcha_channel(
-        self, interaction: discord.Interaction, channel: discord.TextChannel = None
-    ):
-        ctx = await commands.Context.from_interaction(interaction)
-        await self.captcha_channel_command(ctx, channel=channel)
 
 
 async def setup(bot: commands.Bot):
