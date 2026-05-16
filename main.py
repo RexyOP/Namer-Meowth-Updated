@@ -56,7 +56,7 @@ async def initialize_predictor():
     """Create the Prediction object — does NOT load models into RAM."""
     try:
         bot.predictor = Prediction()
-        print("✅ Predictor object created (models not loaded — use p!loadmodel when ready)")
+        print("✅ Predictor object created (models not loaded — use p!model load when ready)")
     except Exception as e:
         print(f"❌ Failed to create predictor: {e}")
 
@@ -193,7 +193,7 @@ async def on_ready():
     print(f"🌐 Serving {len(bot.guilds)} guilds")
     print(f"👥 Serving {sum(g.member_count for g in bot.guilds)} users")
     print(f"💾 RAM at startup: {post_startup_mem:.1f} MB (models not loaded)")
-    print(f"💡 Use !loadmodel to load prediction models when starting an incense session")
+    print(f"💡 Use p!model load to load prediction models when starting an incense session")
     print(f"{'='*50}\n")
 
     asyncio.create_task(memory_monitor())
