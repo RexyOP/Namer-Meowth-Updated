@@ -237,6 +237,14 @@ async def on_command_error(ctx, error):
         await ctx.reply(f"❌ Invalid argument provided.\nUse `m!help` for command usage.", mention_author=False)
         return
 
+    if isinstance(error, commands.NotOwner):
+        await ctx.reply("❌ This command can only be used by the bot owner.", mention_author=False)
+        return
+
+    if isinstance(error, commands.CheckFailure):
+        # Catches any other failed checks not handled above
+        return
+
     print(f"Unexpected error in command {ctx.command}: {error}")
     await ctx.reply("❌ An unexpected error occurred. Please try again later.", mention_author=False)
 
