@@ -485,7 +485,7 @@ class Help(commands.Cog):
                 color=0xFFD700,
             )
             embed.add_field(
-                name=f"`{prefix}loadmodel` / `{prefix}unloadmodel` / `{prefix}reloadmodel`",
+                name=f"`{prefix}model load` / `{prefix}model unload` / `{prefix}model reload`",
                 value=(
                     "Load, unload, or force-re-download the AI prediction models.\n"
                     f"**Aliases:** `{prefix}lm`, `{prefix}um`, `{prefix}rm`"
@@ -493,7 +493,7 @@ class Help(commands.Cog):
                 inline=False,
             )
             embed.add_field(
-                name=f"`{prefix}modelstatus`",
+                name=f"`{prefix}model status`",
                 value="Show model load state, RAM usage, and prediction stats",
                 inline=False,
             )
