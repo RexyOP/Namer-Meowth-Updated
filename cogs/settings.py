@@ -1,4 +1,5 @@
 """Server and user settings management"""
+import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -243,10 +244,28 @@ class Settings(commands.Cog):
         rare_id     = settings.get("rare_role_id")
         regional_id = settings.get("regional_role_id")
 
+        # Fetch incense and reserve allowed roles concurrently
+        from incense import _get_allowed_roles as _inc_get_allowed_roles
+        inc_role_ids, rsv_role_ids = await asyncio.gather(
+            _inc_get_allowed_roles(self.db, ctx.guild.id),
+            self.db.get_reserve_allowed_roles(ctx.guild.id),
+        )
+
+        def _fmt_roles(role_ids: list) -> str:
+            if not role_ids:
+                return "Not set"
+            parts = []
+            for rid in role_ids:
+                role = ctx.guild.get_role(rid)
+                parts.append(role.mention if role else f"*(unknown `{rid}`)*")
+            return "\n".join(parts)
+
         embed = discord.Embed(
             title="📋 Server Ping Roles",
             color=EMBED_COLOR,
         )
+
+        # ── Ping roles (row 1) ───────────────────────────────────────────
         embed.add_field(
             name="Rare Role",
             value=f"<@&{rare_id}>" if rare_id else "Not set",
@@ -259,12 +278,26 @@ class Settings(commands.Cog):
         )
         embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
 
+        # ── Allowed roles (row 2) ────────────────────────────────────────
+        embed.add_field(
+            name="🔥 Incense Allowed Roles",
+            value=_fmt_roles(inc_role_ids),
+            inline=True,
+        )
+        embed.add_field(
+            name="📌 Reserve Allowed Roles",
+            value=_fmt_roles(rsv_role_ids),
+            inline=True,
+        )
+        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+
         embed.add_field(
             name="ℹ️ How to set",
             value=(
                 f"`{p}role rare @Role` — set rare ping role  (omit @Role to clear)\n"
-                f"`{p}role regional @Role` — set regional ping role  (omit @Role to clear)\n\n"
-                "**Note:** Incense/Reserve allowed-roles are managed inside those commands."
+                f"`{p}role regional @Role` — set regional ping role  (omit @Role to clear)\n"
+                f"`{p}inc allowedroles add @Role` — add incense allowed role\n"
+                f"`{p}r allowedroles add @Role` — add reserve allowed role"
             ),
             inline=False,
         )
