@@ -5,6 +5,7 @@ import asyncio
 import aiohttp
 import psutil
 import gc
+import time
 from discord.ext import commands
 from discord import app_commands
 from database import Database
@@ -86,20 +87,29 @@ async def initialize_http_session():
 
 
 async def memory_monitor():
-    """Monitor and log memory usage periodically"""
+    """Monitor and log memory usage every 5 minutes (reduced from every 60 seconds)"""
     await asyncio.sleep(10)
+
+    # Track last log time to reduce frequency
+    last_log_time = 0
+    LOG_INTERVAL = 300  # 5 minutes in seconds — change to 600 for 10 minutes
 
     while True:
         try:
+            current_time = time.time()
             mem_info = bot.process.memory_info()
             mem_mb = mem_info.rss / 1024 / 1024
 
             models_loaded = bot.predictor and bot.predictor.models_initialized
             model_status = "loaded" if models_loaded else "not loaded"
 
-            print(f"[MEMORY] {mem_mb:.1f} MB | Models: {model_status} | Predictions: {bot.prediction_count}")
+            # Only log regular memory status every 5 minutes
+            if current_time - last_log_time >= LOG_INTERVAL:
+                print(f"[MEMORY] {mem_mb:.1f} MB | Models: {model_status} | Predictions: {bot.prediction_count}")
+                last_log_time = current_time
 
             # Run GC early — 320 MB gives headroom before Railway's 500 MB wall
+            # Always check, but only log if triggered
             if mem_mb > 320:
                 print(f"[MEMORY] ⚠️ High usage ({mem_mb:.1f} MB), forcing GC...")
                 gc.collect()
@@ -111,7 +121,7 @@ async def memory_monitor():
             if bot.db and hasattr(bot.db, 'gcache') and bot.db.gcache:
                 bot.db.gcache.cleanup_expired()
 
-            await asyncio.sleep(60)
+            await asyncio.sleep(60)  # Keep checking every 60 seconds internally
 
         except Exception as e:
             print(f"[MEMORY] Monitor error: {e}")
