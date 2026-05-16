@@ -1,5 +1,4 @@
 """Server and user settings management"""
-import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -224,6 +223,111 @@ class Settings(commands.Cog):
         view.message = msg
 
     # ------------------------------------------------------------------
+    # p!force-afk  (admin only)
+    # ------------------------------------------------------------------
+
+    _FORCE_AFK_TYPES = {"collection", "shinyhunt", "typepings", "regionpings", "all"}
+    _FORCE_AFK_LABELS = {
+        "collection":  "Collection",
+        "shinyhunt":   "ShinyHunt",
+        "typepings":   "TypePings",
+        "regionpings": "RegionPings",
+    }
+
+    @commands.command(name="force-afk", aliases=["forceafk", "fafk"])
+    @commands.has_permissions(administrator=True)
+    async def force_afk_command(self, ctx, target: str = None, ping_type: str = None, state: str = None):
+        """Force a user's AFK state on one or all ping types.
+
+        Usage:
+            p!force-afk @user all on          — force AFK on all 4 types
+            p!force-afk @user all off         — remove AFK on all 4 types
+            p!force-afk @user collection on   — force collection AFK only
+            p!force-afk @user shinyhunt off   — remove shiny hunt AFK only
+            p!force-afk @user typepings on
+            p!force-afk @user regionpings off
+
+        Ping types: collection, shinyhunt, typepings, regionpings, all
+        State:      on / off
+        """
+        p = ctx.prefix
+
+        # ── resolve user ──────────────────────────────────────────────
+        if target is None:
+            await ctx.reply(
+                f"❌ Usage: `{p}force-afk @user <type> <on|off>`\n"
+                f"Types: `collection` `shinyhunt` `typepings` `regionpings` `all`",
+                mention_author=False,
+            )
+            return
+
+        raw = target.strip("<@!>")
+        if not raw.isdigit():
+            await ctx.reply("❌ Invalid user. Use a @mention or numeric user ID.", mention_author=False)
+            return
+        uid = int(raw)
+
+        # ── validate type & state ─────────────────────────────────────
+        if ping_type is None or state is None:
+            await ctx.reply(
+                f"❌ Usage: `{p}force-afk @user <type> <on|off>`\n"
+                f"Types: `collection` `shinyhunt` `typepings` `regionpings` `all`",
+                mention_author=False,
+            )
+            return
+
+        ping_type = ping_type.lower()
+        state     = state.lower()
+
+        if ping_type not in self._FORCE_AFK_TYPES:
+            await ctx.reply(
+                f"❌ Unknown type `{ping_type}`. Choose from: `collection` `shinyhunt` `typepings` `regionpings` `all`",
+                mention_author=False,
+            )
+            return
+
+        if state not in ("on", "off"):
+            await ctx.reply("❌ State must be `on` or `off`.", mention_author=False)
+            return
+
+        afk = (state == "on")
+
+        # ── resolve which types to update ────────────────────────────
+        if ping_type == "all":
+            types_to_set = list(self._FORCE_AFK_LABELS.keys())
+        else:
+            types_to_set = [ping_type]
+
+        # ── write all changes concurrently ───────────────────────────
+        _setters = {
+            "collection":  self.db.set_collection_afk,
+            "shinyhunt":   self.db.set_shiny_hunt_afk,
+            "typepings":   self.db.set_type_ping_afk,
+            "regionpings": self.db.set_region_ping_afk,
+        }
+        await asyncio.gather(*[_setters[t](uid, afk) for t in types_to_set])
+
+        # ── build response embed ──────────────────────────────────────
+        icon   = "🔴" if afk else "🟢"
+        action = "forced AFK" if afk else "removed AFK"
+        labels = [self._FORCE_AFK_LABELS[t] for t in types_to_set]
+
+        embed = discord.Embed(
+            title=f"{icon} Force-AFK — {'All Types' if ping_type == 'all' else labels[0]}",
+            color=discord.Color.red() if afk else discord.Color.green(),
+        )
+        embed.add_field(name="User",   value=f"<@{uid}>",             inline=True)
+        embed.add_field(name="State",  value=f"AFK **{'ON' if afk else 'OFF'}**", inline=True)
+        embed.add_field(name="Types",  value="\n".join(f"• {l}" for l in labels), inline=False)
+        embed.set_footer(text=f"Done by {ctx.author} • User can override with p!afk")
+        await ctx.reply(embed=embed, mention_author=False)
+
+    @force_afk_command.error
+    async def force_afk_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False)
+
+    # ------------------------------------------------------------------
     # p!role  (group) — shows usage when invoked without subcommand
     # ------------------------------------------------------------------
 
@@ -244,28 +348,10 @@ class Settings(commands.Cog):
         rare_id     = settings.get("rare_role_id")
         regional_id = settings.get("regional_role_id")
 
-        # Fetch incense and reserve allowed roles concurrently
-        from incense import _get_allowed_roles as _inc_get_allowed_roles
-        inc_role_ids, rsv_role_ids = await asyncio.gather(
-            _inc_get_allowed_roles(self.db, ctx.guild.id),
-            self.db.get_reserve_allowed_roles(ctx.guild.id),
-        )
-
-        def _fmt_roles(role_ids: list) -> str:
-            if not role_ids:
-                return "Not set"
-            parts = []
-            for rid in role_ids:
-                role = ctx.guild.get_role(rid)
-                parts.append(role.mention if role else f"*(unknown `{rid}`)*")
-            return "\n".join(parts)
-
         embed = discord.Embed(
             title="📋 Server Ping Roles",
             color=EMBED_COLOR,
         )
-
-        # ── Ping roles (row 1) ───────────────────────────────────────────
         embed.add_field(
             name="Rare Role",
             value=f"<@&{rare_id}>" if rare_id else "Not set",
@@ -278,26 +364,12 @@ class Settings(commands.Cog):
         )
         embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
 
-        # ── Allowed roles (row 2) ────────────────────────────────────────
-        embed.add_field(
-            name="🔥 Incense Allowed Roles",
-            value=_fmt_roles(inc_role_ids),
-            inline=True,
-        )
-        embed.add_field(
-            name="📌 Reserve Allowed Roles",
-            value=_fmt_roles(rsv_role_ids),
-            inline=True,
-        )
-        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
-
         embed.add_field(
             name="ℹ️ How to set",
             value=(
                 f"`{p}role rare @Role` — set rare ping role  (omit @Role to clear)\n"
-                f"`{p}role regional @Role` — set regional ping role  (omit @Role to clear)\n"
-                f"`{p}inc allowedroles add @Role` — add incense allowed role\n"
-                f"`{p}r allowedroles add @Role` — add reserve allowed role"
+                f"`{p}role regional @Role` — set regional ping role  (omit @Role to clear)\n\n"
+                "**Note:** Incense/Reserve allowed-roles are managed inside those commands."
             ),
             inline=False,
         )
