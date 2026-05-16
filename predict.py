@@ -385,13 +385,12 @@ class Prediction:
 
         # Request a 256px thumbnail from Discord's CDN edge servers instead of
         # the full-res image. Our model resizes to 224×224 anyway, so the extra
-        # pixels are pure wasted bandwidth. Stripping existing query params first
-        # avoids double-parameter conflicts (?ex=...&size=256&size=256 etc.).
+        # pixels are pure wasted bandwidth. We APPEND &size=256 to preserve the
+        # existing auth params (ex=, hm=, is=) — stripping them causes 404s.
         # _stable_cache_key() already strips query params before hashing, so
         # the prediction cache key is unaffected by this change.
-        if is_discord_cdn:
-            base_url = url.split("?")[0]
-            url = f"{base_url}?size=256"
+        if is_discord_cdn and 'size=' not in url:
+            url = f"{url}&size=256" if '?' in url else f"{url}?size=256"
 
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
