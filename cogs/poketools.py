@@ -1,4 +1,4 @@
-"""Spawn rate command cog for Pokemon bot"""
+"""PokeTools cog — spawn rates, shiny rates, and message utilities"""
 import csv
 import io
 import math
@@ -9,6 +9,10 @@ from discord.ext import commands
 from typing import Optional, Dict
 from utils import find_pokemon_by_name_flexible, load_pokemon_data, normalize_pokemon_name
 from config import EMBED_COLOR
+
+# ------------------------------------------------------------------ #
+#  Spawn rate data                                                     #
+# ------------------------------------------------------------------ #
 
 # Using the non-pinned raw URL so that reloading always pulls the latest revision
 SPAWN_RATE_CSV_URL = (
@@ -29,7 +33,6 @@ async def fetch_spawn_rates(session: aiohttp.ClientSession = None, force: bool =
     if _spawn_rate_cache is not None and not force:
         return _spawn_rate_cache
 
-    # Use provided session; fall back to a temporary one only if unavailable
     if session is not None:
         async with session.get(SPAWN_RATE_CSV_URL) as response:
             response.raise_for_status()
@@ -89,14 +92,11 @@ def streak_for_target_pct(target_pct: float, charm: bool) -> int:
     probability meets or exceeds target_pct (0–100).
 
     Formula: (1 + √streak/7) / 4096  [× 1.20 with charm]
-    Solving for streak: streak = ((target * 4096 - 1) * 7)^2
-    We use that as an upper bound and binary-search for exactness.
     Returns the streak, or -1 if unreachable within a safe upper bound.
     """
     target = target_pct / 100
     fn = shiny_prob_charm if charm else shiny_prob
 
-    # Quick reachability check against an astronomically large streak
     hi = 10_000_000_000
     if fn(hi) < target:
         return -1
@@ -112,7 +112,7 @@ def streak_for_target_pct(target_pct: float, charm: bool) -> int:
 
 
 # ------------------------------------------------------------------ #
-#  Embed builders                                                      #
+#  Shiny rate embed builders                                           #
 # ------------------------------------------------------------------ #
 
 def _build_shiny_rate_embed(streak: int) -> discord.Embed:
@@ -155,7 +155,7 @@ def _build_chain_target_embed(target_pct: float) -> discord.Embed:
     return embed
 
 
-def _usage_embed() -> discord.Embed:
+def _shiny_usage_embed() -> discord.Embed:
     p_base  = shiny_prob(0)
     p_charm = shiny_prob_charm(0)
 
@@ -181,15 +181,93 @@ def _usage_embed() -> discord.Embed:
 
 
 # ------------------------------------------------------------------ #
+#  Time difference helpers                                             #
+# ------------------------------------------------------------------ #
+
+async def _resolve_message(
+    channel: discord.TextChannel, message_id: int
+) -> Optional[discord.Message]:
+    """Fetch a message by ID from the given channel. Returns None if not found."""
+    try:
+        return await channel.fetch_message(message_id)
+    except (discord.NotFound, discord.HTTPException):
+        return None
+
+
+async def _get_previous_message(
+    channel: discord.TextChannel, reference_message: discord.Message
+) -> Optional[discord.Message]:
+    """
+    Return the message posted immediately before `reference_message`.
+    Uses channel.history(before=) — no manual cache needed.
+    """
+    async for msg in channel.history(before=reference_message, limit=1):
+        return msg
+    return None
+
+
+def _build_timediff_embed(msg1: discord.Message, msg2: discord.Message) -> discord.Embed:
+    """Build an embed showing the time difference between two messages."""
+    earlier, later = (msg1, msg2) if msg1.created_at < msg2.created_at else (msg2, msg1)
+
+    delta = later.created_at - earlier.created_at
+    total_seconds = delta.total_seconds()
+    total_ms = int(delta.total_seconds() * 1000)
+
+    if total_seconds < 60:
+        seconds_str = f"{total_seconds:.3f}s"
+    elif total_seconds < 3600:
+        minutes = int(total_seconds // 60)
+        secs = total_seconds % 60
+        seconds_str = f"{minutes}m {secs:.3f}s  ({total_seconds:.3f}s total)"
+    else:
+        hours = int(total_seconds // 3600)
+        remaining = total_seconds % 3600
+        minutes = int(remaining // 60)
+        secs = remaining % 60
+        seconds_str = f"{hours}h {minutes}m {secs:.3f}s  ({total_seconds:.3f}s total)"
+
+    embed = discord.Embed(title="⏱️ Time Difference", color=EMBED_COLOR)
+    embed.add_field(
+        name="Earlier Message",
+        value=(
+            f"[Jump]({earlier.jump_url})\n"
+            f"ID: `{earlier.id}`\n"
+            f"By: {earlier.author.mention}\n"
+            f"<t:{int(earlier.created_at.timestamp())}:F>"
+        ),
+        inline=True,
+    )
+    embed.add_field(
+        name="Later Message",
+        value=(
+            f"[Jump]({later.jump_url})\n"
+            f"ID: `{later.id}`\n"
+            f"By: {later.author.mention}\n"
+            f"<t:{int(later.created_at.timestamp())}:F>"
+        ),
+        inline=True,
+    )
+    embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+    embed.add_field(name="Seconds",      value=f"`{seconds_str}`",   inline=True)
+    embed.add_field(name="Milliseconds", value=f"`{total_ms:,} ms`", inline=True)
+    return embed
+
+
+# ------------------------------------------------------------------ #
 #  Cog                                                                 #
 # ------------------------------------------------------------------ #
 
-class SpawnRate(commands.Cog):
+class PokeTools(commands.Cog, name="PokeTools"):
+    """Spawn rates, shiny rates, and message utilities for Pokétwo."""
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.pokemon_data = load_pokemon_data()
 
-    # ---- /spawnrate ------------------------------------------------- #
+    # ================================================================ #
+    #  Spawn rate                                                        #
+    # ================================================================ #
 
     @app_commands.command(name="spawnrate", description="Show the spawn rate for a Pokémon.")
     @app_commands.describe(pokemon="Pokémon name (English, Japanese, or other language)")
@@ -218,17 +296,15 @@ class SpawnRate(commands.Cog):
         dex_num = entry["dex"]
         embed = discord.Embed(title=f"Spawn Rate — {entry['name']}", color=EMBED_COLOR)
         embed.set_thumbnail(url=f"https://cdn.poketwo.net/images/{dex_num}.png")
-        embed.add_field(name="Spawn Chance", value=entry["chance"],    inline=True)
+        embed.add_field(name="Spawn Chance", value=entry["chance"],     inline=True)
         embed.add_field(name="Percentage",   value=entry["chance_pct"], inline=True)
         if pokemon.strip().lower() != entry["name"].lower():
             embed.set_footer(text=f'Searched: "{pokemon.strip()}"')
         await interaction.followup.send(embed=embed)
 
-    # ---- p!spawnrate / p!sr ----------------------------------------- #
-
     @commands.command(name="spawnrate", aliases=["sr"])
     async def spawnrate_prefix(self, ctx: commands.Context, *, pokemon_name: str = None):
-        """Show the spawn rate for a Pokemon. Usage: p!sr <pokemon>"""
+        """Show the spawn rate for a Pokémon. Usage: p!sr <pokemon>"""
         if not pokemon_name:
             await ctx.send("Please provide a Pokémon name. Example: `p!sr geodude`")
             return
@@ -262,7 +338,9 @@ class SpawnRate(commands.Cog):
                 embed.set_footer(text=f'Searched: "{pokemon_name.strip()}"')
             await ctx.send(embed=embed)
 
-    # ---- /shinyrate ------------------------------------------------- #
+    # ================================================================ #
+    #  Shiny rate                                                        #
+    # ================================================================ #
 
     @app_commands.command(name="shinyrate", description="Show shiny rates or encounters needed for a target chance.")
     @app_commands.describe(
@@ -283,7 +361,7 @@ class SpawnRate(commands.Cog):
             return
 
         if chain is None and target is None:
-            await interaction.response.send_message(embed=_usage_embed())
+            await interaction.response.send_message(embed=_shiny_usage_embed())
             return
 
         embeds = []
@@ -294,8 +372,6 @@ class SpawnRate(commands.Cog):
 
         await interaction.response.send_message(embeds=embeds)
 
-    # ---- p!shinyrate / p!shr ---------------------------------------- #
-
     @commands.command(name="shinyrate", aliases=["shr"])
     async def shinyrate_prefix(self, ctx: commands.Context, *, args: str = None):
         """
@@ -303,7 +379,7 @@ class SpawnRate(commands.Cog):
         Usage: p!shr [chain] [target%]
         """
         if not args:
-            await ctx.send(embed=_usage_embed())
+            await ctx.send(embed=_shiny_usage_embed())
             return
 
         async with ctx.typing():
@@ -342,11 +418,132 @@ class SpawnRate(commands.Cog):
                 embeds.append(_build_chain_target_embed(target))
 
             if not embeds:
-                embeds.append(_usage_embed())
+                embeds.append(_shiny_usage_embed())
 
             await ctx.send(embeds=embeds)
 
-    # ---- p!reloadsr (owner only) ------------------------------------ #
+    # ================================================================ #
+    #  Time difference                                                   #
+    # ================================================================ #
+
+    async def _resolve_pair(
+        self,
+        channel: discord.TextChannel,
+        id1: Optional[int],
+        id2: Optional[int],
+        reply_ref: Optional[discord.MessageReference],
+    ) -> tuple[Optional[discord.Message], Optional[discord.Message], Optional[str]]:
+        """
+        Resolve the two messages to compare.
+        Returns (msg_a, msg_b, error_string). error_string is None on success.
+
+        Modes:
+          - reply / one id  → target message + the message before it
+          - two ids         → the two specified messages directly
+        """
+        # Two explicit IDs
+        if id1 is not None and id2 is not None:
+            msg_a = await _resolve_message(channel, id1)
+            if msg_a is None:
+                return None, None, f"❌ Could not find message with ID `{id1}` in this channel."
+            msg_b = await _resolve_message(channel, id2)
+            if msg_b is None:
+                return None, None, f"❌ Could not find message with ID `{id2}` in this channel."
+            return msg_a, msg_b, None
+
+        # One explicit ID → find the message before it
+        if id1 is not None:
+            target = await _resolve_message(channel, id1)
+            if target is None:
+                return None, None, f"❌ Could not find message with ID `{id1}` in this channel."
+            prev = await _get_previous_message(channel, target)
+            if prev is None:
+                return None, None, "❌ Could not find a message before that one."
+            return target, prev, None
+
+        # Reply mode → use the replied-to message and the one before it
+        if reply_ref is not None:
+            target = await _resolve_message(channel, reply_ref.message_id)
+            if target is None:
+                return None, None, "❌ Could not fetch the replied-to message."
+            prev = await _get_previous_message(channel, target)
+            if prev is None:
+                return None, None, "❌ Could not find a message before the replied-to message."
+            return target, prev, None
+
+        return None, None, (
+            "❌ Please either:\n"
+            "• Reply to a message with `p!td`\n"
+            "• Provide one message ID: `p!td <id>`\n"
+            "• Provide two message IDs: `p!td <id1> <id2>`"
+        )
+
+    @app_commands.command(
+        name="timedifference",
+        description="Find the time difference between two messages.",
+    )
+    @app_commands.describe(
+        message_id="A single message ID (finds the message before it), or leave blank when replying",
+        message_id2="Second message ID — compare directly with message_id",
+    )
+    async def timedifference_slash(
+        self,
+        interaction: discord.Interaction,
+        message_id: Optional[str] = None,
+        message_id2: Optional[str] = None,
+    ):
+        await interaction.response.defer()
+
+        id1, id2 = None, None
+        if message_id is not None:
+            try:
+                id1 = int(message_id)
+            except ValueError:
+                await interaction.followup.send("❌ `message_id` must be a valid integer ID.")
+                return
+        if message_id2 is not None:
+            try:
+                id2 = int(message_id2)
+            except ValueError:
+                await interaction.followup.send("❌ `message_id2` must be a valid integer ID.")
+                return
+
+        msg_a, msg_b, error = await self._resolve_pair(interaction.channel, id1, id2, reply_ref=None)
+        if error:
+            await interaction.followup.send(error)
+            return
+
+        await interaction.followup.send(embed=_build_timediff_embed(msg_a, msg_b))
+
+    @commands.command(name="timedifference", aliases=["timediff", "td"])
+    async def timedifference_prefix(
+        self,
+        ctx: commands.Context,
+        id1: Optional[int] = None,
+        id2: Optional[int] = None,
+    ):
+        """
+        Find the time difference between two messages.
+
+        Usage:
+          p!td                — reply to a message; compares it with the one above it
+          p!td <id>           — compares <id> with the message above it
+          p!td <id1> <id2>    — compares the two messages directly
+
+        Aliases: p!timediff, p!timedifference
+        """
+        async with ctx.typing():
+            reply_ref = ctx.message.reference if ctx.message.reference else None
+            msg_a, msg_b, error = await self._resolve_pair(ctx.channel, id1, id2, reply_ref)
+            if error:
+                await ctx.send(error)
+                return
+
+            await ctx.send(embed=_build_timediff_embed(msg_a, msg_b))
+
+    # ================================================================ #
+    #  Owner utilities                                                   #
+    # ================================================================ #
 
     @commands.command(name="reloadsr")
     @commands.is_owner()
@@ -368,4 +565,4 @@ class SpawnRate(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(SpawnRate(bot))
+    await bot.add_cog(PokeTools(bot))
