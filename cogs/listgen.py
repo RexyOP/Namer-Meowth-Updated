@@ -628,6 +628,11 @@ class DisplayOptionsView(discord.ui.View):
         ]
         self.add_item(SortSelect(builder_view, owner_id, sort_opts))
 
+    async def on_timeout(self):
+        # Ephemeral message — cannot be edited, just release refs
+        self.clear_items()
+        self.builder_view = None  # type: ignore[assignment]
+
 
 class FormatSelect(discord.ui.Select):
     def __init__(self, view: "ListBuilderView", owner_id: int, options):
@@ -723,11 +728,6 @@ class SortSelect(discord.ui.Select):
                 embed=self.builder_view.build_embed(),
                 view=self.builder_view
             )
-
-    async def on_timeout(self):
-        # Sent as an ephemeral message — cannot be edited, just release refs
-        self.clear_items()
-        self.builder_view = None  # type: ignore[assignment]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -839,7 +839,7 @@ class ListBuilderView(discord.ui.View):
     """Main view for the list-builder UI with organized button layout."""
 
     def __init__(self, owner_id: int, state: ListState):
-        super().__init__(timeout=600)  # 10-minute timeout
+        super().__init__(timeout=120)  # 2-minute inactivity timeout
         self.owner_id = owner_id
         self.state = state
         self.message: discord.Message | None = None
@@ -873,6 +873,7 @@ class ListBuilderView(discord.ui.View):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Not yours!", ephemeral=True)
             return
+        self._refresh_timeout()
         await interaction.response.send_modal(AddModal(self))
 
     @discord.ui.button(label="Remove", emoji="➖", style=discord.ButtonStyle.danger, row=0)
@@ -880,6 +881,7 @@ class ListBuilderView(discord.ui.View):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Not yours!", ephemeral=True)
             return
+        self._refresh_timeout()
         await interaction.response.send_modal(RemoveModal(self))
 
     @discord.ui.button(label="Clear", emoji="🗑", style=discord.ButtonStyle.danger, row=0)
@@ -887,6 +889,7 @@ class ListBuilderView(discord.ui.View):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Not yours!", ephemeral=True)
             return
+        self._refresh_timeout()
         self.state.clear()
         await interaction.response.edit_message(
             embed=self.build_embed("✅ List cleared."),
@@ -900,6 +903,7 @@ class ListBuilderView(discord.ui.View):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Not yours!", ephemeral=True)
             return
+        self._refresh_timeout()
         view = DisplayOptionsView(self, self.owner_id)
         await interaction.response.send_message(
             "**Choose format, case, language, and sort order:**",
@@ -912,6 +916,7 @@ class ListBuilderView(discord.ui.View):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Not yours!", ephemeral=True)
             return
+        self._refresh_timeout()
         view = AdvancedOptionsView(self, self.owner_id)
         await interaction.response.send_message(
             "**Advanced options:**",
@@ -924,6 +929,7 @@ class ListBuilderView(discord.ui.View):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Not yours!", ephemeral=True)
             return
+        self._refresh_timeout()
 
         if len(self.state.names) == 0:
             await interaction.response.send_message(
@@ -1099,6 +1105,8 @@ class ListGen(commands.Cog):
             self._watch_edits(source_msg, view, bot_msg, owner_id)
         )
         self._edit_watchers[source_msg.id] = task
+        # Auto-prune when the task finishes
+        task.add_done_callback(lambda t: self._edit_watchers.pop(source_msg.id, None))
 
     async def _watch_edits(
         self,
@@ -1111,13 +1119,13 @@ class ListGen(commands.Cog):
         Listen for edits to source_msg for EDIT_WATCH_SECS seconds.
         Each edit resets the 2-minute timer.
         """
-        deadline = asyncio.get_event_loop().time() + EDIT_WATCH_SECS
+        deadline = asyncio.get_running_loop().time() + EDIT_WATCH_SECS
 
         def check(before: discord.Message, after: discord.Message) -> bool:
             return after.id == source_msg.id
 
         while True:
-            remaining = deadline - asyncio.get_event_loop().time()
+            remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
                 break
             try:
@@ -1128,7 +1136,7 @@ class ListGen(commands.Cog):
                 break
 
             # Edit detected – re-extract and reset timer
-            deadline = asyncio.get_event_loop().time() + EDIT_WATCH_SECS
+            deadline = asyncio.get_running_loop().time() + EDIT_WATCH_SECS
             new_names = extract_from_message(after)
             before_count = view.state.count
             view.state.add(new_names)
