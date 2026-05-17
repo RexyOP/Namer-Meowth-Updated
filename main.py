@@ -145,7 +145,7 @@ async def on_ready():
         'cogs.shiny_hunt',
         'cogs.settings',
         'cogs.incense',
-        'cogs.spawnrate',
+        'cogs.poketools',
         'cogs.hint_solver',
         'cogs.prediction',
         'cogs.category',
