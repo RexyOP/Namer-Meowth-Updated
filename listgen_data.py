@@ -218,6 +218,7 @@ def apply_filters(args_str: str) -> list[str]:
         --stage <1|2|3>
         --name / --n  <name>  [all]
         --catchable             only Pokémon present in spawnrate data
+        --notcatchable          only Pokémon absent from spawnrate data
 
     Multiple flags narrow the result (AND logic within one call).
     The caller combines results from multiple modal cells.
@@ -264,6 +265,10 @@ def apply_filters(args_str: str) -> list[str]:
     # ── --catchable  (no argument — Pokémon must have a spawnrate entry)
     if re.search(r'--catchable\b', args_str, re.IGNORECASE):
         _apply([n for n in ALL_NAMES_ORDERED if n.lower() in NAME_TO_SR])
+
+    # ── --notcatchable  (inverse — Pokémon with no spawnrate entry)
+    if re.search(r'--notcatchable\b', args_str, re.IGNORECASE):
+        _apply([n for n in ALL_NAMES_ORDERED if n.lower() not in NAME_TO_SR])
 
     # Re-order by CSV position and deduplicate
     if results is None:
