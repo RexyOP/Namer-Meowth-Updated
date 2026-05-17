@@ -516,12 +516,12 @@ class EncloseModal(discord.ui.Modal, title="Enclose Names"):
     before = discord.ui.TextInput(
         label="Before each name",
         placeholder="e.g. '['",
-        required=True,
+        required=False,
     )
     after = discord.ui.TextInput(
         label="After each name",
         placeholder="e.g. ']'",
-        required=True,
+        required=False,
     )
 
     def __init__(self, view: "ListBuilderView"):
