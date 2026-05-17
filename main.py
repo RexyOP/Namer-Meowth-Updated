@@ -157,6 +157,7 @@ async def on_ready():
         'cogs.bot_hlp',
         'cogs.model_control',
         'cogs.reserve',
+        'cogs.listgen',
     ]
 
     try:
