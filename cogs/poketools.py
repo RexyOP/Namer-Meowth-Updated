@@ -786,7 +786,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
 @app_commands.context_menu(name="Get Caught Date")
 async def date_context_menu(interaction: discord.Interaction, message: discord.Message):
     """Right-click a Pokétwo embed to extract the caught date from its ObjectID."""
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer()
 
     oid = _extract_objectid_from_embed(message)
     if not oid:
@@ -800,16 +800,16 @@ async def date_context_menu(interaction: discord.Interaction, message: discord.M
     try:
         dt = _objectid_to_datetime(oid)
     except (ValueError, OverflowError) as e:
-        await interaction.followup.send(f"❌ Invalid ObjectID `{oid}`: {e}", ephemeral=True)
+        await interaction.followup.send(f"❌ Invalid ObjectID `{oid}`: {e}")
         return
 
-    await interaction.followup.send(_date_response_text(dt), ephemeral=True)
+    await interaction.followup.send(_date_response_text(dt))
 
 
 @app_commands.context_menu(name="Extract IDs")
 async def extractids_context_menu(interaction: discord.Interaction, message: discord.Message):
     """Right-click a Pokétwo pokémon list or marketplace embed to extract all IDs."""
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer()
 
     ids = PokeTools._extract_ids_from_embed(message)
     if not ids:
@@ -819,7 +819,7 @@ async def extractids_context_menu(interaction: discord.Interaction, message: dis
         )
         return
 
-    await interaction.followup.send(" ".join(ids), ephemeral=True)
+    await interaction.followup.send(" ".join(ids))
 
 
 async def setup(bot: commands.Bot):
