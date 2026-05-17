@@ -27,6 +27,7 @@ Filter syntax  (used in Add / Remove modals)
   --stage <1|2|3>                 requires data/stagelist.csv
   --name / --n   [all] <name>     "all" adds all forms of that Pokémon
   --catchable                     only Pokémon present in spawnrate data
+  --notcatchable                  only Pokémon absent from spawnrate data
 """
 
 from __future__ import annotations
@@ -1052,7 +1053,7 @@ class ListGen(commands.Cog):
 
     # ── main command ─────────────────────────────────────────────────────────
 
-    @commands.command(name="listgen", aliases=["lg"])
+    @commands.command(name="listgen", aliases=["lg", "listbuilder"])
     async def listgen(self, ctx: commands.Context):
         """
         Open the Pokémon list builder.
