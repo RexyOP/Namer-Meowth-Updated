@@ -323,7 +323,7 @@ class Prediction(commands.Cog):
         Output order:
             <name>: <confidence>%
             `<@716390085896962058> c <name>`  ← only if catch_command enabled
-            Shortest Name: <n>          ← only if best_name enabled
+            Best Name: <n>          ← only if best_name enabled
             Rare Ping: <@&role>         ← only if applicable
             Regional Ping: <@&role>    ← only if applicable
             Shiny Hunters: @...
@@ -342,7 +342,7 @@ class Prediction(commands.Cog):
         if show_best_name:
             best = get_best_name(name)
             if best:
-                lines.append(f"Shortest Name: {best}")
+                lines.append(f"Best Name: {best}")
 
         # If reserved: only show reserve pings, suppress everything else
         if ping_data["is_reserved"]:
