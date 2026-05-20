@@ -217,6 +217,20 @@ async def _resolve_message(
     return None
 
 
+async def _resolve_message_fast(
+    channel: discord.TextChannel, message_id: int
+) -> Optional[discord.Message]:
+    """
+    Fast resolve: only tries the current channel, doesn't search all guilds.
+    Used for timedifference to avoid timeout when messages are from other servers.
+    Falls back to snowflake math if message can't be fetched.
+    """
+    try:
+        return await channel.fetch_message(message_id)
+    except (discord.NotFound, discord.HTTPException):
+        return None
+
+
 async def _get_previous_message(
     reference_message: discord.Message,
 ) -> Optional[discord.Message]:
@@ -569,10 +583,10 @@ class PokeTools(commands.Cog, name="PokeTools"):
           - reply / one id  → target message + the message before it
           - two ids         → the two specified messages directly
         """
-        # Two explicit IDs
+        # Two explicit IDs — use fast resolve (no guild search)
         if id1 is not None and id2 is not None:
-            msg_a = await _resolve_message(channel, id1, self.bot)
-            msg_b = await _resolve_message(channel, id2, self.bot)
+            msg_a = await _resolve_message_fast(channel, id1)
+            msg_b = await _resolve_message_fast(channel, id2)
             if msg_a is not None and msg_b is not None:
                 return msg_a, msg_b, None, None
             # Fall back to pure snowflake math — works for any valid Discord ID
@@ -580,9 +594,9 @@ class PokeTools(commands.Cog, name="PokeTools"):
 
         # One explicit ID → find the message before it
         if id1 is not None:
-            target = await _resolve_message(channel, id1, self.bot)
+            target = await _resolve_message_fast(channel, id1)
             if target is None:
-                return None, None, f"❌ Could not find message with ID `{id1}` in any accessible channel.", None
+                return None, None, f"❌ Could not find message with ID `{id1}` in this channel.", None
             prev = await _get_previous_message(target)
             if prev is None:
                 return None, None, "❌ Could not find a message before that one.", None
@@ -590,7 +604,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
 
         # Reply mode → use the replied-to message and the one before it
         if reply_ref is not None:
-            target = await _resolve_message(channel, reply_ref.message_id, self.bot)
+            target = await _resolve_message_fast(channel, reply_ref.message_id)
             if target is None:
                 return None, None, "❌ Could not fetch the replied-to message.", None
             prev = await _get_previous_message(target)
