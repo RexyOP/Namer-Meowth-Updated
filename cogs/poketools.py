@@ -352,6 +352,27 @@ def _build_timediff_embed_snowflake(id1: int, id2: int) -> discord.Embed:
     return embed
 
 
+def _build_single_message_date_embed(message_id: int) -> discord.Embed:
+    """
+    Build an embed showing just the date/time of a single message from its Snowflake ID.
+    """
+    dt = _snowflake_to_datetime(message_id)
+    
+    embed = discord.Embed(title="📅 Message Date", color=EMBED_COLOR)
+    embed.add_field(
+        name="Message ID",
+        value=f"`{message_id}`",
+        inline=False,
+    )
+    embed.add_field(
+        name="Created At",
+        value=f"<t:{int(dt.timestamp())}:F>",
+        inline=False,
+    )
+    embed.set_footer(text="Timestamp derived from snowflake ID.")
+    return embed
+
+
 # ------------------------------------------------------------------ #
 #  Pokétwo ObjectID → date helpers                                     #
 # ------------------------------------------------------------------ #
@@ -569,62 +590,51 @@ class PokeTools(commands.Cog, name="PokeTools"):
         id1: Optional[int],
         id2: Optional[int],
         reply_ref: Optional[discord.MessageReference],
-    ) -> tuple[Optional[discord.Message], Optional[discord.Message], Optional[str], Optional[tuple[int, int]]]:
+    ) -> tuple[Optional[discord.Message], Optional[discord.Message], Optional[str], Optional[tuple[int, int]], Optional[int]]:
         """
         Resolve the two messages to compare.
-        Returns (msg_a, msg_b, error_string, snowflake_ids).
+        Returns (msg_a, msg_b, error_string, snowflake_ids, single_id).
 
-        - On full success: (msg_a, msg_b, None, None)
-        - On snowflake fallback (two IDs given but messages unreachable):
-            (None, None, None, (id1, id2))
-        - On error: (None, None, error_string, None)
+        - On full success: (msg_a, msg_b, None, None, None)
+        - On snowflake fallback (IDs given): (None, None, None, (id1, id2), None) or (None, None, None, None, id1)
+        - On error: (None, None, error_string, None, None)
 
         Modes:
           - reply / one id  → target message + the message before it
-          - two ids         → the two specified messages directly
+          - two ids         → use snowflake math only
+          - one id only     → use snowflake math only
         """
-        # Two explicit IDs — use fast resolve (no guild search)
+        # Two explicit IDs — always use snowflake math (no fetching)
         if id1 is not None and id2 is not None:
-            msg_a = await _resolve_message_fast(channel, id1)
-            msg_b = await _resolve_message_fast(channel, id2)
-            if msg_a is not None and msg_b is not None:
-                return msg_a, msg_b, None, None
-            # Fall back to pure snowflake math — works for any valid Discord ID
-            return None, None, None, (id1, id2)
+            return None, None, None, (id1, id2), None
 
-        # One explicit ID → find the message before it
+        # One explicit ID — use snowflake math only
         if id1 is not None:
-            target = await _resolve_message_fast(channel, id1)
-            if target is None:
-                return None, None, f"❌ Could not find message with ID `{id1}` in this channel.", None
-            prev = await _get_previous_message(target)
-            if prev is None:
-                return None, None, "❌ Could not find a message before that one.", None
-            return target, prev, None, None
+            return None, None, None, None, id1
 
-        # Reply mode → use the replied-to message and the one before it
+        # Reply mode → fetch the replied-to message and the one before it (full details)
         if reply_ref is not None:
-            target = await _resolve_message_fast(channel, reply_ref.message_id)
+            target = await _resolve_message(channel, reply_ref.message_id, self.bot)
             if target is None:
-                return None, None, "❌ Could not fetch the replied-to message.", None
+                return None, None, "❌ Could not fetch the replied-to message.", None, None
             prev = await _get_previous_message(target)
             if prev is None:
-                return None, None, "❌ Could not find a message before the replied-to message.", None
-            return target, prev, None, None
+                return None, None, "❌ Could not find a message before the replied-to message.", None, None
+            return target, prev, None, None, None
 
         return None, None, (
             "❌ Please either:\n"
             "• Reply to a message with `p!td`\n"
             "• Provide one message ID: `p!td <id>`\n"
             "• Provide two message IDs: `p!td <id1> <id2>`"
-        ), None
+        ), None, None
 
     @app_commands.command(
         name="timedifference",
-        description="Find the time difference between two messages.",
+        description="Find the time difference between two messages or show a message date.",
     )
     @app_commands.describe(
-        message_id="A single message ID (finds the message before it), or leave blank when replying",
+        message_id="A single message ID (shows date only), or first ID for time diff",
         message_id2="Second message ID — compare directly with message_id",
     )
     async def timedifference_slash(
@@ -649,15 +659,22 @@ class PokeTools(commands.Cog, name="PokeTools"):
                 await interaction.followup.send("❌ `message_id2` must be a valid integer ID.")
                 return
 
-        msg_a, msg_b, error, snowflake_ids = await self._resolve_pair(interaction.channel, id1, id2, reply_ref=None)
+        msg_a, msg_b, error, snowflake_ids, single_id = await self._resolve_pair(interaction.channel, id1, id2, reply_ref=None)
         if error:
             await interaction.followup.send(error)
             return
 
+        # Two IDs — show time difference only
         if snowflake_ids:
             await interaction.followup.send(embed=_build_timediff_embed_snowflake(*snowflake_ids))
             return
 
+        # Single ID — show just the date
+        if single_id is not None:
+            await interaction.followup.send(embed=_build_single_message_date_embed(single_id))
+            return
+
+        # Reply mode — show full details
         await interaction.followup.send(embed=_build_timediff_embed(msg_a, msg_b))
 
     @commands.command(name="timedifference", aliases=["timediff", "td"])
@@ -671,23 +688,31 @@ class PokeTools(commands.Cog, name="PokeTools"):
         Find the time difference between two messages.
 
         Usage:
-          p!td                — reply to a message; compares it with the one above it
-          p!td <id>           — compares <id> with the message above it
-          p!td <id1> <id2>    — compares the two messages directly
+          p!td                — reply to a message; shows it + message above with full details
+          p!td <id>           — shows the date of that message ID only
+          p!td <id1> <id2>    — shows time difference between the two IDs (instant, no fetching)
 
         Aliases: p!timediff, p!timedifference
         """
         async with ctx.typing():
             reply_ref = ctx.message.reference if ctx.message.reference else None
-            msg_a, msg_b, error, snowflake_ids = await self._resolve_pair(ctx.channel, id1, id2, reply_ref)
+            msg_a, msg_b, error, snowflake_ids, single_id = await self._resolve_pair(ctx.channel, id1, id2, reply_ref)
+            
             if error:
                 await ctx.send(error)
                 return
 
+            # Two IDs — show time difference only (Snowflake math, instant)
             if snowflake_ids:
                 await ctx.send(embed=_build_timediff_embed_snowflake(*snowflake_ids))
                 return
 
+            # Single ID — show just the date
+            if single_id is not None:
+                await ctx.send(embed=_build_single_message_date_embed(single_id))
+                return
+
+            # Reply mode — show full details with author, jump link, etc.
             await ctx.send(embed=_build_timediff_embed(msg_a, msg_b))
 
     # ================================================================ #
