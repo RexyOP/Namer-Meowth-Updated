@@ -487,23 +487,17 @@ class Help(commands.Cog):
                 inline=False,
             )
             embed.add_field(
-                name=f"`{prefix}extractids` / `{prefix}extract` / `{prefix}eids`",
+                name=f"`{prefix}color <color>` / `{prefix}c`",
                 value=(
-                    "Extract all Pokémon / listing IDs from a Pokétwo embed, space-separated\n"
-                    f"• Reply to a Pokétwo `p!pokemon` or marketplace embed + `{prefix}extractids`\n"
-                    f"• `{prefix}extractids <message_id>` — provide the message ID directly\n"
-                    "Also available as `/extractids` and the **Extract IDs** right-click context menu"
+                    "Convert and display color in multiple formats\n"
+                    f"• `{prefix}color #FF0000` — hex format\n"
+                    f"• `{prefix}color 255, 0, 0` — RGB format\n"
+                    f"• `{prefix}color red` — color name (red, blue, green, etc.)\n"
+                    "Shows: hex, RGB, HSL, decimal, and visual preview"
                 ),
                 inline=False,
             )
             embed.add_field(
-                name="🔎 Hint Solver (Automatic)",
-                value=(
-                    "When Pokétwo sends a hint the bot automatically replies with matching Pokémon name(s).\n"
-                    "Supports all languages. No command needed."
-                ),
-                inline=False,
-            )
 
         # ── Owner ─────────────────────────────────────────────────────
         elif category in ["owner", "admin", "botowner"]:
@@ -791,6 +785,7 @@ class Help(commands.Cog):
                 value=(
                     f"`{prefix}sr <pokemon>` • `{prefix}shr [chain] [target%]`\n"
                     f"`{prefix}td [id] [id2]` — show date, time diff, or full details (reply)\n"
+                    f"`{prefix}color <hex/rgb/name>` — convert and display color formats\n"
                     f"`{prefix}date [objectid]` / `{prefix}caught` — Pokémon caught date from ObjectID  •  **Right-click:** Get Caught Date\n"
                     f"`{prefix}extractids [msg_id]` / `{prefix}eids` — extract IDs from Pokétwo embed  •  **Right-click:** Extract IDs\n"
                     "Hint solver (automatic — no command needed)"
