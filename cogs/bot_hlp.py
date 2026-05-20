@@ -468,10 +468,10 @@ class Help(commands.Cog):
             embed.add_field(
                 name=f"`{prefix}timedifference` / `{prefix}timediff` / `{prefix}td`",
                 value=(
-                    "Find the time difference between two messages in seconds and milliseconds\n"
-                    f"• Reply to a message + `{prefix}td` — compares it with the message above it\n"
-                    f"• `{prefix}td <id>` — compares that message with the one above it\n"
-                    f"• `{prefix}td <id1> <id2>` — compares two messages directly\n"
+                    "Find time between messages, show message date, or compare IDs (instant)\n"
+                    f"• `{prefix}td` (reply) — show full details of message + one before it\n"
+                    f"• `{prefix}td <id>` — show just the date of that message (instant)\n"
+                    f"• `{prefix}td <id1> <id2>` — show time difference only (instant, works cross-server)\n"
                     "Also available as `/timedifference`"
                 ),
                 inline=False,
@@ -790,7 +790,7 @@ class Help(commands.Cog):
                 name="🔍 Helpful",
                 value=(
                     f"`{prefix}sr <pokemon>` • `{prefix}shr [chain] [target%]`\n"
-                    f"`{prefix}td` • `{prefix}td <id>` • `{prefix}td <id1> <id2>` — time difference between messages\n"
+                    f"`{prefix}td [id] [id2]` — show date, time diff, or full details (reply)\n"
                     f"`{prefix}date [objectid]` / `{prefix}caught` — Pokémon caught date from ObjectID  •  **Right-click:** Get Caught Date\n"
                     f"`{prefix}extractids [msg_id]` / `{prefix}eids` — extract IDs from Pokétwo embed  •  **Right-click:** Extract IDs\n"
                     "Hint solver (automatic — no command needed)"
