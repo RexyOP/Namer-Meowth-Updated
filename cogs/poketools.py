@@ -383,6 +383,118 @@ def _objectid_to_datetime(object_id: str) -> datetime.datetime:
     The first 8 hex characters encode a Unix timestamp (big-endian uint32).
     Returns a timezone-aware UTC datetime.
     """
+
+
+# ------------------------------------------------------------------ #
+#  Color utilities                                                     #
+# ------------------------------------------------------------------ #
+
+def _parse_color(color_input: str) -> Optional[tuple[int, int, int]]:
+    """
+    Parse a color from various formats:
+    - Hex: #RRGGBB or RRGGBB (with or without #)
+    - RGB: rgb(r, g, b) or r, g, b
+    - Color names: red, blue, green, etc.
+    Returns (R, G, B) tuple or None if invalid.
+    """
+    color_input = color_input.strip()
+    
+    # Try hex format
+    if color_input.startswith('#'):
+        color_input = color_input[1:]
+    if len(color_input) == 6 and all(c in '0123456789abcdefABCDEF' for c in color_input):
+        try:
+            r = int(color_input[0:2], 16)
+            g = int(color_input[2:4], 16)
+            b = int(color_input[4:6], 16)
+            return (r, g, b)
+        except ValueError:
+            pass
+    
+    # Try rgb() format
+    if color_input.lower().startswith('rgb(') and color_input.endswith(')'):
+        try:
+            rgb_str = color_input[4:-1]
+            parts = [int(x.strip()) for x in rgb_str.split(',')]
+            if len(parts) == 3 and all(0 <= x <= 255 for x in parts):
+                return tuple(parts)
+        except ValueError:
+            pass
+    
+    # Try comma-separated format
+    try:
+        parts = [int(x.strip()) for x in color_input.split(',')]
+        if len(parts) == 3 and all(0 <= x <= 255 for x in parts):
+            return tuple(parts)
+    except ValueError:
+        pass
+    
+    # Try color names
+    color_names = {
+        'red': (255, 0, 0), 'green': (0, 128, 0), 'blue': (0, 0, 255),
+        'white': (255, 255, 255), 'black': (0, 0, 0), 'yellow': (255, 255, 0),
+        'cyan': (0, 255, 255), 'magenta': (255, 0, 255), 'silver': (192, 192, 192),
+        'gray': (128, 128, 128), 'maroon': (128, 0, 0), 'olive': (128, 128, 0),
+        'lime': (0, 255, 0), 'aqua': (0, 255, 255), 'teal': (0, 128, 128),
+        'navy': (0, 0, 128), 'purple': (128, 0, 128), 'orange': (255, 165, 0),
+        'pink': (255, 192, 203), 'brown': (165, 42, 42), 'gold': (255, 215, 0),
+    }
+    normalized = color_input.lower()
+    if normalized in color_names:
+        return color_names[normalized]
+    
+    return None
+
+
+def _rgb_to_hex(r: int, g: int, b: int) -> str:
+    """Convert RGB to hex format."""
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
+def _rgb_to_hsl(r: int, g: int, b: int) -> tuple[int, int, int]:
+    """Convert RGB (0-255) to HSL (0-360, 0-100, 0-100)."""
+    r, g, b = r / 255.0, g / 255.0, b / 255.0
+    max_val = max(r, g, b)
+    min_val = min(r, g, b)
+    l = (max_val + min_val) / 2
+    
+    if max_val == min_val:
+        h = s = 0
+    else:
+        d = max_val - min_val
+        s = d / (2 - max_val - min_val) if l > 0.5 else d / (max_val + min_val)
+        
+        if max_val == r:
+            h = (g - b) / d + (6 if g < b else 0)
+        elif max_val == g:
+            h = (b - r) / d + 2
+        else:
+            h = (r - g) / d + 4
+        h /= 6
+    
+    return (round(h * 360), round(s * 100), round(l * 100))
+
+
+def _build_color_embed(hex_color: str, rgb: tuple[int, int, int]) -> discord.Embed:
+    """Build an embed showing color information."""
+    r, g, b = rgb
+    h, s, l = _rgb_to_hsl(r, g, b)
+    
+    # Convert hex to int for Discord color (without #)
+    color_int = int(hex_color[1:], 16)
+    
+    embed = discord.Embed(title="🎨 Color Converter", color=color_int)
+    embed.add_field(name="Hex", value=f"`{hex_color.upper()}`", inline=True)
+    embed.add_field(name="RGB", value=f"`rgb({r}, {g}, {b})`", inline=True)
+    embed.add_field(name="HSL", value=f"`hsl({h}, {s}%, {l}%)`", inline=True)
+    embed.add_field(name="Decimal", value=f"`{color_int}`", inline=False)
+    embed.set_thumbnail(url=f"https://singlecolorimage.com/get/{hex_color[1:]}/200x200")
+    embed.set_footer(text="Color preview shown as thumbnail")
+    
+    return embed
+
+
+def _objectid_to_datetime(object_id: str) -> datetime.datetime:
     if len(object_id) < 8:
         raise ValueError(f"ObjectID too short: {object_id!r}")
     unix_ts = int(object_id[:8], 16)
@@ -892,6 +1004,75 @@ class PokeTools(commands.Cog, name="PokeTools"):
                 return
 
             await ctx.send(" ".join(ids))
+
+    # ================================================================ #
+    #  Color converter                                                   #
+    # ================================================================ #
+
+    @app_commands.command(
+        name="color",
+        description="Convert and display color information in multiple formats.",
+    )
+    @app_commands.describe(
+        color_value="Color in hex (#FF0000), RGB (255,0,0), or name (red)",
+    )
+    async def color_slash(
+        self,
+        interaction: discord.Interaction,
+        color_value: str,
+    ):
+        rgb = _parse_color(color_value)
+        if rgb is None:
+            await interaction.response.send_message(
+                "❌ Invalid color format. Try:\n"
+                "• Hex: `#FF0000` or `FF0000`\n"
+                "• RGB: `255, 0, 0` or `rgb(255, 0, 0)`\n"
+                "• Name: `red`, `blue`, `green`, etc."
+            )
+            return
+
+        hex_color = _rgb_to_hex(*rgb)
+        embed = _build_color_embed(hex_color, rgb)
+        await interaction.response.send_message(embed=embed)
+
+    @commands.command(name="color", aliases=["colour", "c"])
+    async def color_prefix(self, ctx: commands.Context, *, color_value: str = None):
+        """
+        Convert and display color information.
+
+        Usage:
+          p!color #FF0000        — show color in hex format
+          p!color 255, 0, 0      — show color in RGB format
+          p!color red            — show color by name
+          p!color rgb(255,0,0)   — RGB function format
+
+        Aliases: p!colour, p!c
+
+        Supported color names: red, green, blue, yellow, cyan, magenta, white, black,
+        gray, silver, maroon, olive, lime, aqua, teal, navy, purple, orange, pink, brown, gold
+        """
+        if not color_value:
+            await ctx.send(
+                "❌ Please provide a color. Examples:\n"
+                "`p!color #FF0000`\n"
+                "`p!color 255, 0, 0`\n"
+                "`p!color red`"
+            )
+            return
+
+        rgb = _parse_color(color_value)
+        if rgb is None:
+            await ctx.send(
+                "❌ Invalid color format. Try:\n"
+                "• Hex: `#FF0000` or `FF0000`\n"
+                "• RGB: `255, 0, 0` or `rgb(255, 0, 0)`\n"
+                "• Name: `red`, `blue`, `green`, etc."
+            )
+            return
+
+        hex_color = _rgb_to_hex(*rgb)
+        embed = _build_color_embed(hex_color, rgb)
+        await ctx.send(embed=embed)
 
     # ================================================================ #
     #  Owner utilities                                                   #
