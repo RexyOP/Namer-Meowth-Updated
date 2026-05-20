@@ -187,23 +187,44 @@ def _shiny_usage_embed() -> discord.Embed:
 # ------------------------------------------------------------------ #
 
 async def _resolve_message(
-    channel: discord.TextChannel, message_id: int
+    channel: discord.TextChannel, message_id: int, bot: Optional[commands.Bot] = None
 ) -> Optional[discord.Message]:
-    """Fetch a message by ID from the given channel. Returns None if not found."""
+    """
+    Fetch a message by ID. Tries the current channel first, then falls back to
+    searching every text channel the bot can read across all its guilds.
+    Returns None if not found anywhere.
+    """
     try:
         return await channel.fetch_message(message_id)
     except (discord.NotFound, discord.HTTPException):
+        pass
+
+    if bot is None:
         return None
+
+    for guild in bot.guilds:
+        for ch in guild.text_channels:
+            if ch.id == channel.id:
+                continue  # already tried
+            perms = ch.permissions_for(guild.me)
+            if not (perms.read_messages and perms.read_message_history):
+                continue
+            try:
+                return await ch.fetch_message(message_id)
+            except (discord.NotFound, discord.HTTPException):
+                continue
+
+    return None
 
 
 async def _get_previous_message(
-    channel: discord.TextChannel, reference_message: discord.Message
+    reference_message: discord.Message,
 ) -> Optional[discord.Message]:
     """
-    Return the message posted immediately before `reference_message`.
-    Uses channel.history(before=) — no manual cache needed.
+    Return the message posted immediately before `reference_message`,
+    fetched from the channel the message actually lives in.
     """
-    async for msg in channel.history(before=reference_message, limit=1):
+    async for msg in reference_message.channel.history(before=reference_message, limit=1):
         return msg
     return None
 
@@ -253,6 +274,67 @@ def _build_timediff_embed(msg1: discord.Message, msg2: discord.Message) -> disco
     embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
     embed.add_field(name="Seconds",      value=f"`{seconds_str}`",   inline=True)
     embed.add_field(name="Milliseconds", value=f"`{total_ms:,} ms`", inline=True)
+    return embed
+
+
+DISCORD_EPOCH_MS = 1420070400000  # Jan 1, 2015 UTC
+
+
+def _snowflake_to_datetime(snowflake_id: int) -> datetime.datetime:
+    """Extract the UTC creation time encoded in a Discord snowflake ID."""
+    ms = (snowflake_id >> 22) + DISCORD_EPOCH_MS
+    return datetime.datetime.fromtimestamp(ms / 1000, tz=datetime.timezone.utc)
+
+
+def _build_timediff_embed_snowflake(id1: int, id2: int) -> discord.Embed:
+    """
+    Build a time-difference embed using only snowflake math — no message fetch needed.
+    Used when the bot cannot access the messages directly.
+    """
+    dt1 = _snowflake_to_datetime(id1)
+    dt2 = _snowflake_to_datetime(id2)
+    earlier_id, later_id = (id1, id2) if dt1 < dt2 else (id2, id1)
+    earlier_dt = _snowflake_to_datetime(earlier_id)
+    later_dt   = _snowflake_to_datetime(later_id)
+
+    delta = later_dt - earlier_dt
+    total_seconds = delta.total_seconds()
+    total_ms = int(total_seconds * 1000)
+
+    if total_seconds < 60:
+        seconds_str = f"{total_seconds:.3f}s"
+    elif total_seconds < 3600:
+        minutes = int(total_seconds // 60)
+        secs = total_seconds % 60
+        seconds_str = f"{minutes}m {secs:.3f}s  ({total_seconds:.3f}s total)"
+    else:
+        hours = int(total_seconds // 3600)
+        remaining = total_seconds % 3600
+        minutes = int(remaining // 60)
+        secs = remaining % 60
+        seconds_str = f"{hours}h {minutes}m {secs:.3f}s  ({total_seconds:.3f}s total)"
+
+    embed = discord.Embed(title="⏱️ Time Difference", color=EMBED_COLOR)
+    embed.add_field(
+        name="Earlier Message",
+        value=(
+            f"ID: `{earlier_id}`\n"
+            f"<t:{int(earlier_dt.timestamp())}:F>"
+        ),
+        inline=True,
+    )
+    embed.add_field(
+        name="Later Message",
+        value=(
+            f"ID: `{later_id}`\n"
+            f"<t:{int(later_dt.timestamp())}:F>"
+        ),
+        inline=True,
+    )
+    embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+    embed.add_field(name="Seconds",      value=f"`{seconds_str}`",   inline=True)
+    embed.add_field(name="Milliseconds", value=f"`{total_ms:,} ms`", inline=True)
+    embed.set_footer(text="Timestamps derived from snowflake IDs — message content not accessible.")
     return embed
 
 
@@ -473,10 +555,15 @@ class PokeTools(commands.Cog, name="PokeTools"):
         id1: Optional[int],
         id2: Optional[int],
         reply_ref: Optional[discord.MessageReference],
-    ) -> tuple[Optional[discord.Message], Optional[discord.Message], Optional[str]]:
+    ) -> tuple[Optional[discord.Message], Optional[discord.Message], Optional[str], Optional[tuple[int, int]]]:
         """
         Resolve the two messages to compare.
-        Returns (msg_a, msg_b, error_string). error_string is None on success.
+        Returns (msg_a, msg_b, error_string, snowflake_ids).
+
+        - On full success: (msg_a, msg_b, None, None)
+        - On snowflake fallback (two IDs given but messages unreachable):
+            (None, None, None, (id1, id2))
+        - On error: (None, None, error_string, None)
 
         Modes:
           - reply / one id  → target message + the message before it
@@ -484,40 +571,39 @@ class PokeTools(commands.Cog, name="PokeTools"):
         """
         # Two explicit IDs
         if id1 is not None and id2 is not None:
-            msg_a = await _resolve_message(channel, id1)
-            if msg_a is None:
-                return None, None, f"❌ Could not find message with ID `{id1}` in this channel."
-            msg_b = await _resolve_message(channel, id2)
-            if msg_b is None:
-                return None, None, f"❌ Could not find message with ID `{id2}` in this channel."
-            return msg_a, msg_b, None
+            msg_a = await _resolve_message(channel, id1, self.bot)
+            msg_b = await _resolve_message(channel, id2, self.bot)
+            if msg_a is not None and msg_b is not None:
+                return msg_a, msg_b, None, None
+            # Fall back to pure snowflake math — works for any valid Discord ID
+            return None, None, None, (id1, id2)
 
         # One explicit ID → find the message before it
         if id1 is not None:
-            target = await _resolve_message(channel, id1)
+            target = await _resolve_message(channel, id1, self.bot)
             if target is None:
-                return None, None, f"❌ Could not find message with ID `{id1}` in this channel."
-            prev = await _get_previous_message(channel, target)
+                return None, None, f"❌ Could not find message with ID `{id1}` in any accessible channel.", None
+            prev = await _get_previous_message(target)
             if prev is None:
-                return None, None, "❌ Could not find a message before that one."
-            return target, prev, None
+                return None, None, "❌ Could not find a message before that one.", None
+            return target, prev, None, None
 
         # Reply mode → use the replied-to message and the one before it
         if reply_ref is not None:
-            target = await _resolve_message(channel, reply_ref.message_id)
+            target = await _resolve_message(channel, reply_ref.message_id, self.bot)
             if target is None:
-                return None, None, "❌ Could not fetch the replied-to message."
-            prev = await _get_previous_message(channel, target)
+                return None, None, "❌ Could not fetch the replied-to message.", None
+            prev = await _get_previous_message(target)
             if prev is None:
-                return None, None, "❌ Could not find a message before the replied-to message."
-            return target, prev, None
+                return None, None, "❌ Could not find a message before the replied-to message.", None
+            return target, prev, None, None
 
         return None, None, (
             "❌ Please either:\n"
             "• Reply to a message with `p!td`\n"
             "• Provide one message ID: `p!td <id>`\n"
             "• Provide two message IDs: `p!td <id1> <id2>`"
-        )
+        ), None
 
     @app_commands.command(
         name="timedifference",
@@ -549,9 +635,13 @@ class PokeTools(commands.Cog, name="PokeTools"):
                 await interaction.followup.send("❌ `message_id2` must be a valid integer ID.")
                 return
 
-        msg_a, msg_b, error = await self._resolve_pair(interaction.channel, id1, id2, reply_ref=None)
+        msg_a, msg_b, error, snowflake_ids = await self._resolve_pair(interaction.channel, id1, id2, reply_ref=None)
         if error:
             await interaction.followup.send(error)
+            return
+
+        if snowflake_ids:
+            await interaction.followup.send(embed=_build_timediff_embed_snowflake(*snowflake_ids))
             return
 
         await interaction.followup.send(embed=_build_timediff_embed(msg_a, msg_b))
@@ -575,9 +665,13 @@ class PokeTools(commands.Cog, name="PokeTools"):
         """
         async with ctx.typing():
             reply_ref = ctx.message.reference if ctx.message.reference else None
-            msg_a, msg_b, error = await self._resolve_pair(ctx.channel, id1, id2, reply_ref)
+            msg_a, msg_b, error, snowflake_ids = await self._resolve_pair(ctx.channel, id1, id2, reply_ref)
             if error:
                 await ctx.send(error)
+                return
+
+            if snowflake_ids:
+                await ctx.send(embed=_build_timediff_embed_snowflake(*snowflake_ids))
                 return
 
             await ctx.send(embed=_build_timediff_embed(msg_a, msg_b))
@@ -654,7 +748,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
         async with ctx.typing():
             replied_msg: Optional[discord.Message] = None
             if ctx.message.reference and ctx.message.reference.message_id:
-                replied_msg = await _resolve_message(ctx.channel, ctx.message.reference.message_id)
+                replied_msg = await _resolve_message(ctx.channel, ctx.message.reference.message_id, self.bot)
 
             oid, error = self._resolve_date_target(object_id, replied_msg)
             if error:
