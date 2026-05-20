@@ -498,6 +498,23 @@ class Help(commands.Cog):
                 inline=False,
             )
             embed.add_field(
+                name=f"`{prefix}extractids` / `{prefix}extract` / `{prefix}eids`",
+                value=(
+                    "Extract all Pokémon / listing IDs from a Pokétwo embed, space-separated\n"
+                    f"• Reply to a Pokétwo `p!pokemon` or marketplace embed + `{prefix}extractids`\n"
+                    f"• `{prefix}extractids <message_id>` — provide the message ID directly\n"
+                    "Also available as `/extractids` and the **Extract IDs** right-click context menu"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="🔎 Hint Solver (Automatic)",
+                value=(
+                    "When Pokétwo sends a hint the bot automatically replies with matching Pokémon name(s).\n"
+                    "Supports all languages. No command needed."
+                ),
+                inline=False,
+            )
 
         # ── Owner ─────────────────────────────────────────────────────
         elif category in ["owner", "admin", "botowner"]:
