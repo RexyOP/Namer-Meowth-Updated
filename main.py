@@ -14,19 +14,31 @@ from config import TOKEN, BOT_PREFIX
 
 # Custom prefix function for case-insensitive prefixes
 def get_prefix(bot, message):
-    content_lower = message.content.lower()
+    content = message.content
+    content_lower = content.lower()
 
     # Allow mentioning the bot as a prefix (e.g. @BotName help)
     mention_prefixes = [f'<@{bot.user.id}> ', f'<@!{bot.user.id}> '] if bot.user else []
 
     for prefix in mention_prefixes:
-        if message.content.startswith(prefix):
+        if content.startswith(prefix):
+            stripped = content[len(prefix):].lstrip()
+            message.content = prefix + stripped
             return prefix
 
     for prefix in BOT_PREFIX:
         prefix_lower = prefix.lower()
+
         if content_lower.startswith(prefix_lower):
-            return message.content[:len(prefix)]
+            # Remove all spaces after prefix
+            stripped = content[len(prefix):].lstrip()
+
+            # Rebuild message content
+            # p!          ping -> p!ping
+            # p!            inc cat add -> p!inc cat add
+            message.content = prefix + stripped
+
+            return prefix
 
     return BOT_PREFIX
 
@@ -39,7 +51,7 @@ bot = commands.Bot(
     intents=intents,
     help_command=None,
     case_insensitive=True,
-    max_messages=1000  # ← FIXED: Was None (unlimited), now limits to 1000 messages
+    max_messages=1000
 )
 
 # Global instances
@@ -76,7 +88,7 @@ async def initialize_http_session():
         limit_per_host=10,
         keepalive_timeout=30,
         enable_cleanup_closed=True,
-        ttl_dns_cache=300,  # cache Discord CDN DNS lookups for 5 minutes
+        ttl_dns_cache=300,
     )
 
     bot.http_session = aiohttp.ClientSession(
@@ -88,11 +100,11 @@ async def initialize_http_session():
 
 
 async def memory_monitor():
-    """Monitor and log memory usage every 5 minutes (reduced from every 60 seconds)"""
+    """Monitor and log memory usage every 5 minutes"""
     await asyncio.sleep(10)
-    
+
     last_log_time = 0
-    LOG_INTERVAL = 480  # 5 minutes instead of 60 seconds
+    LOG_INTERVAL = 480
 
     while True:
         try:
@@ -103,12 +115,10 @@ async def memory_monitor():
             models_loaded = bot.predictor and bot.predictor.models_initialized
             model_status = "loaded" if models_loaded else "not loaded"
 
-            # Only log every 5 minutes
             if current_time - last_log_time >= LOG_INTERVAL:
                 print(f"[MEMORY] {mem_mb:.1f} MB | Models: {model_status} | Predictions: {bot.prediction_count}")
                 last_log_time = current_time
 
-            # Run GC early — 460 MB gives headroom before Railway's 500 MB wall
             if mem_mb > 460:
                 print(f"[MEMORY] ⚠️ High usage ({mem_mb:.1f} MB), forcing GC...")
                 gc.collect()
@@ -116,11 +126,10 @@ async def memory_monitor():
                 new_mem_mb = bot.process.memory_info().rss / 1024 / 1024
                 print(f"[MEMORY] After GC: {new_mem_mb:.1f} MB (freed {mem_mb - new_mem_mb:.1f} MB)")
 
-            # Evict stale keys from guild cache every cycle
             if bot.db and hasattr(bot.db, 'gcache') and bot.db.gcache:
                 bot.db.gcache.cleanup_expired()
 
-            await asyncio.sleep(60)  # Keep checking every 60 seconds, but log less frequently
+            await asyncio.sleep(60)
 
         except Exception as e:
             print(f"[MEMORY] Monitor error: {e}")
@@ -178,7 +187,6 @@ async def on_ready():
             print(f"❌ Failed to load {cog}: {e}")
             failed_count += 1
 
-    # Sync slash commands with Discord
     try:
         synced = await bot.tree.sync()
         print(f"✅ Synced {len(synced)} slash commands")
@@ -190,8 +198,10 @@ async def on_ready():
     print(f"\n{'='*50}")
     print(f"✅ Bot ready!")
     print(f"📊 Loaded {loaded_count}/{len(cogs_to_load)} cogs")
+
     if failed_count > 0:
         print(f"⚠️ Failed to load {failed_count} cogs")
+
     print(f"🌐 Serving {len(bot.guilds)} guilds")
     print(f"👥 Serving {sum(g.member_count for g in bot.guilds)} users")
     print(f"💾 RAM at startup: {post_startup_mem:.1f} MB (models not loaded)")
@@ -216,98 +226,128 @@ async def on_message_edit(before, after):
 @bot.event
 async def on_command_error(ctx, error):
     """Global error handler"""
+
     if isinstance(error, commands.CommandNotFound):
         return
 
     if isinstance(error, commands.CommandOnCooldown):
-        await ctx.reply(f"⏳ This command is on cooldown. Try again in {error.retry_after:.1f}s", mention_author=False)
+        await ctx.reply(
+            f"⏳ This command is on cooldown. Try again in {error.retry_after:.1f}s",
+            mention_author=False
+        )
         return
 
     if isinstance(error, commands.MissingPermissions):
-        await ctx.reply("❌ You don't have permission to use this command.", mention_author=False)
+        await ctx.reply(
+            "❌ You don't have permission to use this command.",
+            mention_author=False
+        )
         return
 
     if isinstance(error, commands.BotMissingPermissions):
-        await ctx.reply("❌ I don't have the necessary permissions to execute this command.", mention_author=False)
+        await ctx.reply(
+            "❌ I don't have the necessary permissions to execute this command.",
+            mention_author=False
+        )
         return
 
     if isinstance(error, commands.MissingRequiredArgument):
-        await ctx.reply(f"❌ Missing required argument: `{error.param.name}`\nUse `m!help` for command usage.", mention_author=False)
+        await ctx.reply(
+            f"❌ Missing required argument: `{error.param.name}`\nUse `m!help` for command usage.",
+            mention_author=False
+        )
         return
 
     if isinstance(error, commands.BadArgument):
-        await ctx.reply(f"❌ Invalid argument provided.\nUse `m!help` for command usage.", mention_author=False)
+        await ctx.reply(
+            f"❌ Invalid argument provided.\nUse `m!help` for command usage.",
+            mention_author=False
+        )
         return
 
     if isinstance(error, commands.NotOwner):
-        await ctx.reply("❌ This command can only be used by the bot owner.", mention_author=False)
+        await ctx.reply(
+            "❌ This command can only be used by the bot owner.",
+            mention_author=False
+        )
         return
 
     if isinstance(error, commands.NoPrivateMessage):
-        await ctx.reply("❌ This command can't be used in DMs. Please use it in a server.", mention_author=False)
+        await ctx.reply(
+            "❌ This command can't be used in DMs. Please use it in a server.",
+            mention_author=False
+        )
         return
 
     if isinstance(error, commands.CheckFailure):
-        # Catches any other failed checks not handled above
         return
 
     print(f"Unexpected error in command {ctx.command}: {error}")
-    await ctx.reply("❌ An unexpected error occurred. Please try again later.", mention_author=False)
+
+    await ctx.reply(
+        "❌ An unexpected error occurred. Please try again later.",
+        mention_author=False
+    )
 
 
-# ============================================================================
-# DIAGNOSTIC COMMAND - Check memory and cache status
-# ============================================================================
 @bot.command(name="memcheck")
 async def memcheck(ctx):
     """Check bot's memory usage and cache status"""
+
     try:
         mem_info = bot.process.memory_info()
         mem_mb = mem_info.rss / 1024 / 1024
-        
-        # Get number of cached messages
+
         cached_messages = len(bot.cached_messages) if hasattr(bot, 'cached_messages') else 0
-        
-        # Create response
+
         embed = discord.Embed(
             title="💾 Memory & Cache Status",
             color=discord.Color.blue()
         )
-        
+
         embed.add_field(
             name="RAM Usage",
             value=f"{mem_mb:.1f} MB / 500 MB ({(mem_mb/500)*100:.1f}%)",
             inline=False
         )
-        
+
         embed.add_field(
             name="Cached Messages",
             value=f"{cached_messages:,} / 1000 (max)",
             inline=False
         )
-        
+
         embed.add_field(
             name="Predictions Made",
             value=str(bot.prediction_count),
             inline=False
         )
-        
-        # Add warning if memory is high
+
         if mem_mb > 400:
             embed.color = discord.Color.red()
-            embed.add_field(name="⚠️ WARNING", value="Memory is dangerously high!", inline=False)
+            embed.add_field(
+                name="⚠️ WARNING",
+                value="Memory is dangerously high!",
+                inline=False
+            )
+
         elif mem_mb > 350:
             embed.color = discord.Color.orange()
-            embed.add_field(name="⚠️ WARNING", value="Memory usage is elevated", inline=False)
-        
+            embed.add_field(
+                name="⚠️ WARNING",
+                value="Memory usage is elevated",
+                inline=False
+            )
+
         await ctx.send(embed=embed)
-        
+
     except Exception as e:
         await ctx.send(f"❌ Error: {e}")
 
 
 async def cleanup():
     """Clean up resources on shutdown"""
+
     if bot.http_session:
         await bot.http_session.close()
 
@@ -322,14 +362,18 @@ def main():
 
     try:
         bot.run(TOKEN)
+
     except discord.LoginFailure:
         print("❌ Error: Invalid Discord token")
+
     except Exception as e:
         print(f"❌ Error starting bot: {e}")
+
     finally:
         try:
             loop = asyncio.get_event_loop()
             loop.run_until_complete(cleanup())
+
         except Exception:
             pass
 
