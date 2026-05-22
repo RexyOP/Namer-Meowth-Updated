@@ -5,7 +5,7 @@ import os
 TOKEN = os.getenv("DISCORD_TOKEN")
 MONGODB_URI = os.getenv("MONGODB_URI")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # Optional: for private model repos
-BOT_PREFIX = ['p!', 'P!','zoro', 'Zoro','Rexy', 'rexy']
+BOT_PREFIX = ['p!', 'P!','zoro ', 'Zoro ','Rexy ', 'rexy ']
 POKETWO_USER_ID = 716390085896962058
 
 # Embed Configuration
