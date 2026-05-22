@@ -24,11 +24,13 @@ def get_prefix(bot, message):
             return prefix
 
     for prefix in BOT_PREFIX:
-        prefix_lower = prefix.lower()
-        if content_lower.startswith(prefix_lower):
-        # Trim extra spaces after prefix
+    prefix_lower = prefix.lower()
+
+    if content_lower.startswith(prefix_lower):
+        # Remove extra spaces after prefix
         stripped = message.content[len(prefix):].lstrip()
         message.content = prefix + stripped
+
         return prefix
 
     return BOT_PREFIX
