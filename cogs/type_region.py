@@ -15,7 +15,7 @@ ALL_TYPES = [
 
 ALL_REGIONS = [
     "kanto", "johto", "hoenn", "sinnoh", "unova",
-    "kalos", "alola", "galar", "paldea", "kitakami", "unknown", "hisui"
+    "kalos", "alola", "galar", "paldea", "kitakami", "unknown", "hisui", "pokopia"
 ]
 
 # One emoji per type for the button labels
@@ -29,7 +29,7 @@ TYPE_EMOJI = {
 
 REGION_EMOJI = {
     "kanto":  "1️⃣", "johto":  "2️⃣", "hoenn":  "3️⃣", "sinnoh": "4️⃣",
-    "unova":  "5️⃣", "kalos":  "6️⃣", "alola":  "7️⃣", "galar":  "8️⃣", "paldea": "9️⃣", "unknown": "❓", "kitakami": "🌏", "hisui": "🌏",
+    "unova":  "5️⃣", "kalos":  "6️⃣", "alola":  "7️⃣", "galar":  "8️⃣", "paldea": "9️⃣", "unknown": "❓", "kitakami": "🌏", "hisui": "🌏", "pokopia": "🌏",
 }
 
 
