@@ -29,7 +29,7 @@ ALL_TYPES = [
 
 ALL_REGIONS = [
     "kanto", "johto", "hoenn", "sinnoh", "unova",
-    "kalos", "alola", "galar", "paldea", "kitakami", "unknown", "hisui"
+    "kalos", "alola", "galar", "paldea", "kitakami", "unknown", "hisui", "pokopia"
 ]
 
 SAFE_MENTIONS = discord.AllowedMentions(
