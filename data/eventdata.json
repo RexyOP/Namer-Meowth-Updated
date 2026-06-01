@@ -2612,8 +2612,8 @@
     "dex_number": 165,
     "name": "Swarming Ledyba",
     "other_names": {},
-    "is_variant": true,
-    "variant_of": "Ledyba",
+    "is_variant": false,
+    "variant_of": null,
     "rarity": "Event"
   },
   {
@@ -2657,11 +2657,19 @@
     "rarity": "Event"
   },
   {
+    "dex_number": 132,
+    "name": "Pokopia Ditto",
+    "other_names": {},
+    "is_variant": true,
+    "variant_of": "Ditto",
+    "rarity": "Event"
+  },
+  {
     "dex_number": 738,
     "name": "Cicada Vikavolt",
     "other_names": {},
-    "is_variant": true,
-    "variant_of": "Vikavolt",
+    "is_variant": false,
+    "variant_of": null,
     "rarity": "Event"
   }
 ]
