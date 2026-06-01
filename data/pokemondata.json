@@ -17783,6 +17783,66 @@
     "rarity": "legendary"
   },
   {
+    "dex_number": 143,
+    "name": "Mosslax",
+    "other_names": {
+      "🇯🇵": "Pokopia Snorlax",
+      "🇬🇧": "Mosslax"
+    },
+    "is_variant": true,
+    "variant_of": "Snorlax"
+  },
+  {
+    "dex_number": 25,
+    "name": "Peakychu",
+    "other_names": {
+      "🇯🇵": "Pokopia Pikachu",
+      "🇬🇧": "Peakychu"
+    },
+    "is_variant": true,
+    "variant_of": "Pikachu"
+  },
+  {
+    "dex_number": 235,
+    "name": "Smearguru",
+    "other_names": {
+      "🇯🇵": "Pokopia Smeargle",
+      "🇬🇧": "Smearguru"
+    },
+    "is_variant": true,
+    "variant_of": "Smeargle"
+  },
+  {
+    "dex_number": 479,
+    "name": "DJ Rotom",
+    "other_names": {
+      "🇯🇵": "Pokopia Rotom",
+      "🇬🇧": "DJ Rotom"
+    },
+    "is_variant": true,
+    "variant_of": "Rotom"
+  },
+  {
+    "dex_number": 820,
+    "name": "Chef Dente",
+    "other_names": {
+      "🇯🇵": "Pokopia Greedent",
+      "🇬🇧": "Chef Dente"
+    },
+    "is_variant": true,
+    "variant_of": "Greedent"
+  },
+  {
+    "dex_number": 465,
+    "name": "Prof Tangrowth",
+    "other_names": {
+      "🇯🇵": "Pokopia Tangrowth",
+      "🇬🇧": "Prof Tangrowth"
+    },
+    "is_variant": true,
+    "variant_of": "Tangrowth"
+  },
+  {
     "dex_number": 1025,
     "name": "Pecharunt",
     "other_names": {
