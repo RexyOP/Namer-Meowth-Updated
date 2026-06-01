@@ -1,7 +1,7 @@
 """Bot configuration and constants"""
 import os
 
-# Discord Configuration
+# Discord Configurationn
 TOKEN = os.getenv("DISCORD_TOKEN")
 MONGODB_URI = os.getenv("MONGODB_URI")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # Optional: for private model repos
