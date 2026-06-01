@@ -583,7 +583,7 @@ class StarboardUnbox(commands.Cog):
         title = embed.title or ""
 
         # Check for opening keywords
-        opening_keywords = ['open', 'opening', 'box', 'chest', 'mystery', 'egg', 'eggs', 'bundle', 'puddle', 'rain', 'storm']
+        opening_keywords = ['open', 'opening', 'box', 'chest', 'mystery', 'egg', 'eggs', 'bundle', 'puddle', 'supply', 'crate', 'crates', 'rain', 'storm']
         is_opening_message = any(keyword.lower() in title.lower() for keyword in opening_keywords)
 
         if not is_opening_message:
