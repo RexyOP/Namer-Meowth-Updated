@@ -351,7 +351,13 @@ class ListState:
 
         # Apply language transformation (before case so case applies to translated names too)
         if self.lang_key == "best":
-            names = [_BEST_NAMES_LOWER.get(n.lower(), n) for n in names]
+            def _pick_best(n: str) -> str:
+                val = _BEST_NAMES_LOWER.get(n.lower(), n)
+                # If value has multiple options separated by ", " pick the first one
+                if isinstance(val, str) and "," in val:
+                    return val.split(",")[0].strip()
+                return val
+            names = [_pick_best(n) for n in names]
         elif self.lang_key != "en":
             lookup = _LANG_LOOKUPS.get(self.lang_key, {})
             names = [lookup.get(n.lower(), n) for n in names]
@@ -378,9 +384,10 @@ class ListState:
         elif self.format_key == "newline":
             output = "\n".join(f"{self.line_prefix}{n}" for n in names)
         elif self.format_key == "n_flag":
-            output = " --n ".join(names)
+            # Include flag before first pokemon: --n poke1 --n poke2 ...
+            output = ("--n " + " --n ".join(names)) if names else ""
         elif self.format_key == "evo_flag":
-            output = " --evo ".join(names)
+            output = ("--evo " + " --evo ".join(names)) if names else ""
         else:
             output = ", ".join(names)
 
@@ -707,16 +714,6 @@ class DisplayOptionsView(discord.ui.View):
         ]
         self.add_item(FormatSelect(builder_view, owner_id, format_opts))
 
-        # Case dropdown
-        case_opts = [
-            discord.SelectOption(
-                label=label, value=key,
-                default=(key == builder_view.state.case_key),
-            )
-            for label, key in ListState.CASE_OPTIONS
-        ]
-        self.add_item(CaseSelect(builder_view, owner_id, case_opts))
-
         # Language dropdown
         lang_opts = [
             discord.SelectOption(
@@ -855,13 +852,6 @@ class AdvancedOptionsView(discord.ui.View):
         self.builder_view = builder_view
         self.owner_id = owner_id
 
-    @discord.ui.button(label="Enclose", emoji="🔤", style=discord.ButtonStyle.secondary)
-    async def enclose_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
-            return
-        await interaction.response.send_modal(EncloseModal(self.builder_view))
-
     @discord.ui.button(label="Replace", emoji="🔄", style=discord.ButtonStyle.secondary)
     async def replace_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
@@ -945,6 +935,37 @@ class PaginatorView(discord.ui.View):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Case Select — lives on row 2 of the main view (always visible)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class MainCaseSelect(discord.ui.Select):
+    """Case dropdown shown directly on the main list-builder message (row 2)."""
+
+    def __init__(self, builder_view: "ListBuilderView", owner_id: int, options):
+        self.builder_view = builder_view
+        self.owner_id = owner_id
+        current_label = next(l for l, k in ListState.CASE_OPTIONS if k == builder_view.state.case_key)
+        super().__init__(
+            placeholder=f"🔡 Text case — {current_label}",
+            options=options,
+            row=2,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Not yours!", ephemeral=True)
+            return
+        self.builder_view.state.case_key = self.values[0]
+        case_label = next(l for l, k in ListState.CASE_OPTIONS if k == self.values[0])
+        # Update placeholder to reflect new selection
+        self.placeholder = f"🔡 Text case — {case_label}"
+        await interaction.response.edit_message(
+            embed=self.builder_view.build_embed(f"🔡 Case: {case_label}"),
+            view=self.builder_view,
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main List Builder View
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -957,6 +978,19 @@ class ListBuilderView(discord.ui.View):
         self.state = state
         self.message: discord.Message | None = None
         self._watcher_task: asyncio.Task | None = None  # edit-watcher, cancelled on timeout
+
+        # Sync format button label to current state
+        self.format_cycle_button.label = self._FORMAT_LABELS.get(state.format_key, "📄 Comma")
+
+        # Add Case dropdown on row 2 (always visible)
+        case_opts = [
+            discord.SelectOption(
+                label=label, value=key,
+                default=(key == state.case_key),
+            )
+            for label, key in ListState.CASE_OPTIONS
+        ]
+        self.add_item(MainCaseSelect(self, owner_id, case_opts))
 
     def build_embed(self, status: str = "") -> discord.Embed:
         """Build the main builder embed."""
@@ -1017,22 +1051,36 @@ class ListBuilderView(discord.ui.View):
             view=self,
         )
 
-    # ── Row 2: Display Options ────────────────────────────────────────────
+    # ── Row 1: Format / Enclose / Advanced / Send ────────────────────────
 
-    @discord.ui.button(label="Format & Display", emoji="📋", style=discord.ButtonStyle.secondary, row=1)
-    async def display_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    _FORMAT_CYCLE = ["comma", "n_flag", "evo_flag", "newline"]
+    _FORMAT_LABELS = {"comma": "📄 Comma", "n_flag": "📄 --n", "evo_flag": "📄 --evo", "newline": "📄 Newline"}
+
+    @discord.ui.button(label="📄 Comma", style=discord.ButtonStyle.secondary, row=1)
+    async def format_cycle_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Not yours!", ephemeral=True)
             return
         self._refresh_timeout()
-        view = DisplayOptionsView(self, self.owner_id)
-        await interaction.response.send_message(
-            "**Choose format, case, language, and sort order:**",
-            view=view,
-            ephemeral=True
+        cycle = self._FORMAT_CYCLE
+        current_idx = cycle.index(self.state.format_key) if self.state.format_key in cycle else 0
+        next_idx = (current_idx + 1) % len(cycle)
+        self.state.format_key = cycle[next_idx]
+        button.label = self._FORMAT_LABELS[self.state.format_key]
+        await interaction.response.edit_message(
+            embed=self.build_embed(f"📄 Format: {self._FORMAT_LABELS[self.state.format_key]}"),
+            view=self,
         )
 
-    @discord.ui.button(label="Advanced Options", emoji="⚙️", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="🔤 Enclose", style=discord.ButtonStyle.secondary, row=1)
+    async def enclose_main_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Not yours!", ephemeral=True)
+            return
+        self._refresh_timeout()
+        await interaction.response.send_modal(EncloseModal(self))
+
+    @discord.ui.button(label="⚙️ Advanced", style=discord.ButtonStyle.secondary, row=1)
     async def advanced_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Not yours!", ephemeral=True)
@@ -1040,12 +1088,12 @@ class ListBuilderView(discord.ui.View):
         self._refresh_timeout()
         view = AdvancedOptionsView(self, self.owner_id)
         await interaction.response.send_message(
-            "**Advanced options:**",
+            "**Advanced options — Language, Sort, Replace, Events:**",
             view=view,
             ephemeral=True
         )
 
-    @discord.ui.button(label="Send", emoji="📤", style=discord.ButtonStyle.success, row=1)
+    @discord.ui.button(label="📤 Send", style=discord.ButtonStyle.success, row=1)
     async def send_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Not yours!", ephemeral=True)
@@ -1100,22 +1148,25 @@ class ListBuilderView(discord.ui.View):
                 pages.append("`" + "\n".join(current_lines) + "`")
         else:
             # For --n / --evo formats, split by the flag separator
+            # Output is now "--n poke1 --n poke2 ..." so strip leading prefix first
+            prefix = "--n " if self.state.format_key == "n_flag" else "--evo "
             flag = " --n " if self.state.format_key == "n_flag" else " --evo "
-            items = full.split(flag)
+            stripped = full[len(prefix):] if full.startswith(prefix) else full
+            items = stripped.split(flag)
             pages = []
             current = []
             current_len = 0
             for item in items:
                 segment_len = len(item) + (len(flag) if current else 0)
-                if current_len + segment_len > 1994 and current:
-                    pages.append("`" + flag.join(current) + "`")
+                if current_len + segment_len > (1994 - len(prefix)) and current:
+                    pages.append("`" + prefix + flag.join(current) + "`")
                     current = [item]
                     current_len = len(item)
                 else:
                     current.append(item)
                     current_len += segment_len
             if current:
-                pages.append("`" + flag.join(current) + "`")
+                pages.append("`" + prefix + flag.join(current) + "`")
 
         if len(pages) == 1:
             await interaction.response.send_message(pages[0])
