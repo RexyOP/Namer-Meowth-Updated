@@ -680,14 +680,14 @@ class Help(commands.Cog):
             )
 
         # ── All commands ──────────────────────────────────────────────
-        elif category in ["listgen", "lg", "listbuilder", "list", "listbuilder"]:
+        elif category in ["listgen", "lg", "listbuilder", "list"]:
             embed = discord.Embed(
                 title="📝 List Builder",
                 description=(
                     "Build, filter, and export Pokémon name lists with a button-driven UI.\n"
                     f"Start with `{prefix}listgen` (or `{prefix}lg` / `{prefix}listbuilder`).\n"
-                    f"Reply to a message containing Pokémon names to extract them automatically — "
-                    "the bot will watch that message for edits for 2 minutes."
+                    "Reply to a message containing Pokémon names to extract them automatically — "
+                    "the bot watches that message for edits for 2 minutes."
                 ),
                 color=EMBED_COLOR,
             )
@@ -700,45 +700,68 @@ class Help(commands.Cog):
                 inline=False,
             )
             embed.add_field(
-                name="🔘 Buttons",
+                name="🔘 Main Buttons  *(Row 1)*",
                 value=(
-                    "**➕ Add** — open a modal with up to 3 filter inputs\n"
-                    "**➖ Remove** — remove names matching a filter\n"
-                    "**🗑 Clear** — wipe the entire list\n"
-                    "**📋 Format & Display** — choose output format, case, language, and sort order\n"
-                    "**⚙️ Advanced Options** — set enclosure, find & replace, toggle event Pokémon\n"
+                    "**➕ Add** — add Pokémon via up to 3 filter inputs\n"
+                    "**🔍 Filter** — keep only matching Pokémon from the current list\n"
+                    "**➖ Remove** — remove Pokémon matching a filter\n"
+                    "**🗑️ Clear** — wipe the entire list"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="🔘 Action Buttons  *(Row 2)*",
+                value=(
+                    "**📄 Format** *(cycles)* — click to cycle: Comma → --n → --evo → Newline\n"
+                    "**🔤 Enclose** — wrap each name with custom text before/after\n"
+                    "  └ Use `\\s` in the enclose modal where you need a space (Discord trims spaces)\n"
+                    "**⚙️ Advanced** — Language, Sort order, Find & Replace, Events toggle\n"
                     "**📤 Send** — post the finished list (auto-paginates if too long)"
                 ),
                 inline=False,
             )
             embed.add_field(
-                name="🔍 Filter Syntax",
+                name="🔡 Case Dropdown  *(Row 3)*",
                 value=(
-                    f"`--type <type>` / `--t <type>` — filter by type\n"
-                    f"`--region <region>` / `--r <region>` — filter by region\n"
-                    f"`--sr <denom>` / `--spawnrate <denom>` — filter by spawn-rate denominator *(e.g. `--sr 225`)*\n"
-                    f"`--stage <1|2|3>` — filter by evolution stage\n"
-                    f"`--name <name>` / `--n <name>` — exact name match; prefix `all` for all forms *(e.g. `--n all furfrou`)*\n"
-                    f"`--catchable` — only Pokémon with a spawn-rate entry\n"
-                    f"`--notcatchable` — only Pokémon **without** a spawn-rate entry\n"
-                    "Filters in a single cell are combined with AND logic. "
-                    "Multiple modal cells are combined with OR logic."
+                    "Always-visible dropdown — change text case instantly:\n"
+                    "**As-is** • **UPPER** • **lower** • **Title**\n"
+                    "Works correctly with all languages (case is applied after translation)."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="🔍 Filter Syntax  *(used in Add / Filter / Remove modals)*",
+                value=(
+                    "`--type <type>` / `--t` — filter by type\n"
+                    "`--region <region>` / `--r` — filter by region\n"
+                    "`--sr <denom>` / `--spawnrate` — by spawn-rate denominator *(e.g. `--sr 225`)*\n"
+                    "`--stage <1|2|3>` — by evolution stage\n"
+                    "`--name <name>` / `--n` — exact name; prefix `all` for all forms\n"
+                    "`--catchable` / `--notcatchable` — spawn-rate presence\n"
+                    "Each cell = independent filter combined with **OR**. "
+                    "Multiple flags in one cell = **AND**."
                 ),
                 inline=False,
             )
             embed.add_field(
                 name="📋 Format Options",
                 value=(
-                    "**Comma separated** — `Bulbasaur, Ivysaur, Venusaur`\n"
-                    "**--n format** — `Bulbasaur --n Ivysaur --n Venusaur`\n"
-                    "**--evo format** — `Bulbasaur --evo Ivysaur --evo Venusaur`\n"
-                    "**One per line** — one name per line (supports bullet prefix)"
+                    "**Comma** — `Bulbasaur, Ivysaur, Venusaur`\n"
+                    "**--n** — `--n Bulbasaur --n Ivysaur --n Venusaur` *(first Pokémon gets the flag too)*\n"
+                    "**--evo** — `--evo Bulbasaur --evo Ivysaur --evo Venusaur`\n"
+                    "**Newline** — one name per line (supports bullet prefix in Advanced)"
                 ),
                 inline=False,
             )
             embed.add_field(
-                name="🌍 Language Options",
-                value="English 🇬🇧 • German 🇩🇪 • French 🇫🇷 • Japanese 🇯🇵 • Best Name ⭐",
+                name="⚙️ Advanced Options",
+                value=(
+                    "**🌐 Language** — English 🇬🇧 • German 🇩🇪 • French 🇫🇷 • Japanese 🇯🇵 • Best Name ⭐\n"
+                    "  └ *Best Name picks the first/most recognised name when multiple exist*\n"
+                    "**🔀 Sort** — A→Z • Z→A • Longest first • Shortest first • SR high→low • SR low→high\n"
+                    "**🔄 Replace** — find & replace text in the final output\n"
+                    "**🎉 Events** — toggle inclusion of event Pokémon"
+                ),
                 inline=False,
             )
             embed.add_field(
@@ -836,6 +859,8 @@ class Help(commands.Cog):
                 name="📝 List Builder",
                 value=(
                     f"`{prefix}listgen` / `{prefix}lg` / `{prefix}listbuilder`\n"
+                    "Buttons: ➕ Add · 🔍 Filter · ➖ Remove · 🗑️ Clear · 📄 Format *(cycles)* · 🔤 Enclose · ⚙️ Advanced · 📤 Send\n"
+                    "Row 3: 🔡 Case dropdown (always visible)\n"
                     f"Filters: `--type` `--region` `--sr` `--stage` `--name` `--catchable` `--notcatchable`"
                 ),
                 inline=False,
