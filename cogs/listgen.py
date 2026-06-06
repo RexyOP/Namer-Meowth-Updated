@@ -840,26 +840,90 @@ class SortSelect(discord.ui.Select):
             )
 
 
+class AdvLangSelect(discord.ui.Select):
+    def __init__(self, view: "ListBuilderView", owner_id: int, options, current_label: str):
+        self.builder_view = view
+        self.owner_id = owner_id
+        super().__init__(placeholder=f"🌐 Language — {current_label}", options=options, row=0)
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Not yours!", ephemeral=True)
+            return
+        self.builder_view.state.lang_key = self.values[0]
+        label = next(l for l, k in ListState.LANG_OPTIONS if k == self.values[0])
+        self.placeholder = f"🌐 Language — {label}"
+        await interaction.response.send_message(f"✅ Language set to {label}.", ephemeral=True)
+        if self.builder_view.message:
+            await self.builder_view.message.edit(
+                embed=self.builder_view.build_embed(),
+                view=self.builder_view,
+            )
+
+
+class AdvSortSelect(discord.ui.Select):
+    def __init__(self, view: "ListBuilderView", owner_id: int, options, current_label: str):
+        self.builder_view = view
+        self.owner_id = owner_id
+        super().__init__(placeholder=f"🔀 Sort — {current_label}", options=options, row=1)
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Not yours!", ephemeral=True)
+            return
+        self.builder_view.state.sort_key = self.values[0]
+        label = next(l for l, k in ListState.SORT_OPTIONS if k == self.values[0])
+        self.placeholder = f"🔀 Sort — {label}"
+        await interaction.response.send_message(f"✅ Sort set to {label}.", ephemeral=True)
+        if self.builder_view.message:
+            await self.builder_view.message.edit(
+                embed=self.builder_view.build_embed(),
+                view=self.builder_view,
+            )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Advanced Options View (opened from Advanced button)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class AdvancedOptionsView(discord.ui.View):
-    """Dropdown menu for advanced options (enclosure, replace, event mode)."""
+    """Dropdown menu for advanced options (language, sort, replace, event mode)."""
 
     def __init__(self, builder_view: "ListBuilderView", owner_id: int):
         super().__init__(timeout=300)
         self.builder_view = builder_view
         self.owner_id = owner_id
 
-    @discord.ui.button(label="Replace", emoji="🔄", style=discord.ButtonStyle.secondary)
+        # Language dropdown (row 0)
+        lang_opts = [
+            discord.SelectOption(
+                label=label, value=key,
+                default=(key == builder_view.state.lang_key),
+            )
+            for label, key in ListState.LANG_OPTIONS
+        ]
+        current_lang = next(l for l, k in ListState.LANG_OPTIONS if k == builder_view.state.lang_key)
+        self.add_item(AdvLangSelect(builder_view, owner_id, lang_opts, current_lang))
+
+        # Sort dropdown (row 1)
+        sort_opts = [
+            discord.SelectOption(
+                label=label, value=key,
+                default=(key == builder_view.state.sort_key),
+            )
+            for label, key in ListState.SORT_OPTIONS
+        ]
+        current_sort = next(l for l, k in ListState.SORT_OPTIONS if k == builder_view.state.sort_key)
+        self.add_item(AdvSortSelect(builder_view, owner_id, sort_opts, current_sort))
+
+    @discord.ui.button(label="Replace", emoji="🔄", style=discord.ButtonStyle.secondary, row=2)
     async def replace_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Not yours!", ephemeral=True)
             return
         await interaction.response.send_modal(ReplaceModal(self.builder_view))
 
-    @discord.ui.button(label="Events", emoji="🎉", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Events", emoji="🎉", style=discord.ButtonStyle.secondary, row=2)
     async def events_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Not yours!", ephemeral=True)
