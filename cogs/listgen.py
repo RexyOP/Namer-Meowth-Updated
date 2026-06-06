@@ -326,14 +326,44 @@ class ListState:
 
     def format_output(self) -> str:
         """Format the list according to current settings."""
-        names = self.names
+        # Start from the sorted (but not yet cased) names
+        result = self._names[:]
 
-        # Apply language transformation
+        # Apply event filter
+        if not self.event_mode:
+            result = [n for n in result if n.lower() not in _EVENT_NAMES_LOWER]
+
+        # Sort (same logic as names property)
+        if self.sort_key == "alpha_asc":
+            result.sort(key=lambda n: n.lower())
+        elif self.sort_key == "alpha_desc":
+            result.sort(key=lambda n: n.lower(), reverse=True)
+        elif self.sort_key == "len_asc":
+            result.sort(key=len)
+        elif self.sort_key == "len_desc":
+            result.sort(key=len, reverse=True)
+        elif self.sort_key == "sr_asc":
+            result.sort(key=lambda n: NAME_TO_SR.get(n.lower(), 9999))
+        elif self.sort_key == "sr_desc":
+            result.sort(key=lambda n: NAME_TO_SR.get(n.lower(), 9999), reverse=True)
+
+        names = result
+
+        # Apply language transformation (before case so case applies to translated names too)
         if self.lang_key == "best":
             names = [_BEST_NAMES_LOWER.get(n.lower(), n) for n in names]
         elif self.lang_key != "en":
             lookup = _LANG_LOOKUPS.get(self.lang_key, {})
             names = [lookup.get(n.lower(), n) for n in names]
+
+        # Apply case AFTER language (so lower/upper/title works on translated names)
+        if self.case_key == "upper":
+            names = [n.upper() for n in names]
+        elif self.case_key == "lower":
+            names = [n.lower() for n in names]
+        elif self.case_key == "title":
+            names = [n.title() for n in names]
+        # else "asis" — keep translated name as-is
 
         # Apply enclosure
         if self.enclose_before or self.enclose_after:
@@ -511,6 +541,84 @@ class RemoveModal(discord.ui.Modal, title="Remove Pokémon - Enter filters"):
         )
 
 
+class FilterModal(discord.ui.Modal, title="Filter List – Keep Matching Pokémon"):
+    """Modal for filtering the existing list – keeps only Pokémon that match any filter."""
+
+    filter1 = discord.ui.TextInput(
+        label="Keep filter 1",
+        placeholder="e.g. --type fire  (keeps fire-type Pokémon)",
+        style=discord.TextStyle.short,
+        required=False,
+    )
+    filter2 = discord.ui.TextInput(
+        label="Keep filter 2",
+        placeholder="e.g. --type grass",
+        style=discord.TextStyle.short,
+        required=False,
+    )
+    filter3 = discord.ui.TextInput(
+        label="Keep filter 3",
+        placeholder="e.g. --region kanto",
+        style=discord.TextStyle.short,
+        required=False,
+    )
+
+    def __init__(self, view: "ListBuilderView"):
+        super().__init__()
+        self._view = view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != self._view.owner_id:
+            await interaction.response.send_message("Not yours!", ephemeral=True)
+            return
+
+        filters = [
+            self.filter1.value.strip(),
+            self.filter2.value.strip(),
+            self.filter3.value.strip(),
+        ]
+
+        if not any(filters):
+            await interaction.response.send_message(
+                "❌ Enter at least one filter.", ephemeral=True
+            )
+            return
+
+        # Build set of names to KEEP (union of all filter results, intersected with current list)
+        keep_lower: set[str] = set()
+        for f in filters:
+            if not f:
+                continue
+            if f.startswith("--"):
+                try:
+                    results = apply_filters(f)
+                    keep_lower.update(n.lower() for n in results)
+                except Exception as e:
+                    await interaction.response.send_message(
+                        f"❌ Filter error in '{f}': {str(e)}", ephemeral=True
+                    )
+                    return
+            else:
+                # Fuzzy name match against ALL names
+                query_lower = f.lower()
+                for n in ALL_NAMES_ORDERED:
+                    if query_lower in n.lower():
+                        keep_lower.add(n.lower())
+
+        # Intersect with the current list (preserve order)
+        before = self._view.state.count
+        kept = [n for n in self._view.state._names if n.lower() in keep_lower]
+        self._view.state.set_names_ordered(kept)
+        removed = before - self._view.state.count
+
+        await interaction.response.edit_message(
+            embed=self._view.build_embed(
+                f"🔍 Filtered: kept {self._view.state.count}, removed {removed}."
+            ),
+            view=self._view,
+        )
+
+
 class EncloseModal(discord.ui.Modal, title="Enclose Names"):
     """Modal for wrapping names with custom strings."""
 
@@ -639,7 +747,8 @@ class FormatSelect(discord.ui.Select):
     def __init__(self, view: "ListBuilderView", owner_id: int, options):
         self.builder_view = view
         self.owner_id = owner_id
-        super().__init__(placeholder="Output format…", options=options, row=0)
+        current_label = next(l for l, k in ListState.FORMAT_OPTIONS if k == view.state.format_key)
+        super().__init__(placeholder=f"📄 Output format — {current_label}", options=options, row=0)
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
@@ -663,7 +772,8 @@ class CaseSelect(discord.ui.Select):
     def __init__(self, view: "ListBuilderView", owner_id: int, options):
         self.builder_view = view
         self.owner_id = owner_id
-        super().__init__(placeholder="Text case…", options=options, row=1)
+        current_label = next(l for l, k in ListState.CASE_OPTIONS if k == view.state.case_key)
+        super().__init__(placeholder=f"🔡 Text case — {current_label}", options=options, row=1)
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
@@ -687,7 +797,8 @@ class LangSelect(discord.ui.Select):
     def __init__(self, view: "ListBuilderView", owner_id: int, options):
         self.builder_view = view
         self.owner_id = owner_id
-        super().__init__(placeholder="Language / Name style…", options=options, row=2)
+        current_label = next(l for l, k in ListState.LANG_OPTIONS if k == view.state.lang_key)
+        super().__init__(placeholder=f"🌐 Language / Name style — {current_label}", options=options, row=2)
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
@@ -711,7 +822,8 @@ class SortSelect(discord.ui.Select):
     def __init__(self, view: "ListBuilderView", owner_id: int, options):
         self.builder_view = view
         self.owner_id = owner_id
-        super().__init__(placeholder="Sort order…", options=options, row=3)
+        current_label = next(l for l, k in ListState.SORT_OPTIONS if k == view.state.sort_key)
+        super().__init__(placeholder=f"🔀 Sort order — {current_label}", options=options, row=3)
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
@@ -876,6 +988,14 @@ class ListBuilderView(discord.ui.View):
             return
         self._refresh_timeout()
         await interaction.response.send_modal(AddModal(self))
+
+    @discord.ui.button(label="Filter", emoji="🔍", style=discord.ButtonStyle.primary, row=0)
+    async def filter_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Not yours!", ephemeral=True)
+            return
+        self._refresh_timeout()
+        await interaction.response.send_modal(FilterModal(self))
 
     @discord.ui.button(label="Remove", emoji="➖", style=discord.ButtonStyle.danger, row=0)
     async def remove_button(self, interaction: discord.Interaction, button: discord.ui.Button):
