@@ -631,12 +631,12 @@ class EncloseModal(discord.ui.Modal, title="Enclose Names"):
 
     before = discord.ui.TextInput(
         label="Before each name",
-        placeholder="e.g. '['",
+        placeholder=r"e.g. '[' or ':joy: \s'  — use \s where you want a space",
         required=False,
     )
     after = discord.ui.TextInput(
         label="After each name",
-        placeholder="e.g. ']'",
+        placeholder=r"e.g. ']' or '\s :joy:'  — use \s where you want a space",
         required=False,
     )
 
@@ -648,8 +648,10 @@ class EncloseModal(discord.ui.Modal, title="Enclose Names"):
         if interaction.user.id != self._view.owner_id:
             await interaction.response.send_message("Not yours!", ephemeral=True)
             return
-        self._view.state.enclose_before = self.before.value
-        self._view.state.enclose_after = self.after.value
+        # Discord strips leading/trailing whitespace from modal inputs.
+        # Users can type \s where they want a space (e.g. ":joy \s" → ":joy ").
+        self._view.state.enclose_before = self.before.value.replace("\\s", " ")
+        self._view.state.enclose_after = self.after.value.replace("\\s", " ")
         await interaction.response.send_message("✅ Enclosure applied.", ephemeral=True)
         # Update main builder embed
         if self._view.message:
