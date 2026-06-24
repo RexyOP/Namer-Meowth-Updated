@@ -544,6 +544,57 @@ def _date_response_text(dt: datetime.datetime) -> str:
 
 
 # ------------------------------------------------------------------ #
+#  Spawn rate embed builder                                            #
+# ------------------------------------------------------------------ #
+
+def _build_spawnrate_embed(
+    entries: list[dict],
+    canonical_name: str,
+    searched_name: str,
+) -> discord.Embed:
+    """
+    Build the spawn-rate embed for one or more variants.
+
+    - 1 entry  → classic two-field layout (Spawn Chance + Percentage).
+    - 2–8 entries → one field per variant (existing behaviour).
+    - 9+ entries  → compact description table to stay under Discord's
+                     6 000-character embed limit (e.g. all 28 Unown forms).
+    """
+    title = f"Spawn Rate — {canonical_name}"
+    if searched_name.lower() != canonical_name.lower():
+        title += f'  (searched: "{searched_name}")'
+
+    embed = discord.Embed(title=title, color=EMBED_COLOR)
+    embed.set_thumbnail(url=f"https://cdn.poketwo.net/images/{entries[0]['dex']}.png")
+
+    if len(entries) == 1:
+        entry = entries[0]
+        embed.add_field(name="Spawn Chance", value=entry["chance"],     inline=True)
+        embed.add_field(name="Percentage",   value=entry["chance_pct"], inline=True)
+
+    elif len(entries) <= 8:
+        for entry in entries:
+            embed.add_field(
+                name=entry["name"],
+                value=f"{entry['chance']}  ({entry['chance_pct']})",
+                inline=False,
+            )
+
+    else:
+        # Compact table in description — safe for 28+ Unown forms etc.
+        lines = [f"`{'Pokémon':<22} {'Chance':<12} Percentage`"]
+        lines.append("`" + "─" * 44 + "`")
+        for entry in entries:
+            name_col   = entry["name"][:22]
+            chance_col = entry["chance"][:12]
+            pct_col    = entry["chance_pct"]
+            lines.append(f"`{name_col:<22} {chance_col:<12} {pct_col}`")
+        embed.description = "\n".join(lines)
+
+    return embed
+
+
+# ------------------------------------------------------------------ #
 #  Cog                                                                 #
 # ------------------------------------------------------------------ #
 
@@ -583,22 +634,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
             )
             return
 
-        # Build a single embed listing all variants
-        title = f"Spawn Rate — {canonical_name}"
-        if pokemon.strip().lower() != canonical_name.lower():
-            title += f" (searched: \"{pokemon.strip()}\")"
-        embed = discord.Embed(title=title, color=EMBED_COLOR)
-
-        # Thumbnail from the first (exact/base) entry
-        embed.set_thumbnail(url=f"https://cdn.poketwo.net/images/{entries[0]['dex']}.png")
-
-        for entry in entries:
-            embed.add_field(
-                name=entry["name"],
-                value=f"{entry['chance']}  ({entry['chance_pct']})",
-                inline=False,
-            )
-
+        embed = _build_spawnrate_embed(entries, canonical_name, pokemon.strip())
         await interaction.followup.send(embed=embed)
 
     @commands.command(name="spawnrate", aliases=["sr"])
@@ -629,22 +665,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
                 )
                 return
 
-            # Build a single embed listing all variants
-            title = f"Spawn Rate — {canonical_name}"
-            if pokemon_name.strip().lower() != canonical_name.lower():
-                title += f" (searched: \"{pokemon_name.strip()}\")"
-            embed = discord.Embed(title=title, color=EMBED_COLOR)
-
-            # Thumbnail from the first (exact/base) entry
-            embed.set_thumbnail(url=f"https://cdn.poketwo.net/images/{entries[0]['dex']}.png")
-
-            for entry in entries:
-                embed.add_field(
-                    name=entry["name"],
-                    value=f"{entry['chance']}  ({entry['chance_pct']})",
-                    inline=False,
-                )
-
+            embed = _build_spawnrate_embed(entries, canonical_name, pokemon_name.strip())
             await ctx.send(embed=embed)
 
     # ================================================================ #
