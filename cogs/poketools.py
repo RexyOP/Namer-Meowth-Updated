@@ -68,6 +68,25 @@ def find_spawn_rate(search_name: str, spawn_data: Dict[str, dict]) -> Optional[d
     return spawn_data.get(normalized)
 
 
+def find_spawn_rate_family(base_english_name: str, spawn_data: Dict[str, dict]) -> list[dict]:
+    """
+    Return all spawn-rate entries whose name contains `base_english_name` as a word.
+    For example, base_english_name="meowth" matches:
+      - "Meowth"
+      - "Alolan Meowth"
+      - "Galarian Meowth"
+    Matches are case-insensitive and require a whole-word boundary so that
+    searching "mew" doesn't pull in "Mewtwo".
+    Results are sorted: exact match first, then alphabetically.
+    """
+    needle = normalize_pokemon_name(base_english_name).lower()
+    pattern = re.compile(r'\b' + re.escape(needle) + r'\b', re.IGNORECASE)
+    matches = [entry for entry in spawn_data.values() if pattern.search(entry["name"])]
+    # Sort: exact name first, then alphabetically
+    matches.sort(key=lambda e: (e["name"].lower() != needle, e["name"].lower()))
+    return matches
+
+
 # ------------------------------------------------------------------ #
 #  Shiny rate math                                                     #
 # ------------------------------------------------------------------ #
@@ -539,7 +558,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
     #  Spawn rate                                                        #
     # ================================================================ #
 
-    @app_commands.command(name="spawnrate", description="Show the spawn rate for a Pokémon.")
+    @app_commands.command(name="spawnrate", description="Show the spawn rate for a Pokémon (shows all regional forms).")
     @app_commands.describe(pokemon="Pokémon name (English, Japanese, or other language)")
     async def spawnrate_slash(self, interaction: discord.Interaction, pokemon: str):
         await interaction.response.defer()
@@ -553,30 +572,40 @@ class PokeTools(commands.Cog, name="PokeTools"):
             await interaction.followup.send(f"❌ Failed to fetch spawn rate data: `{e}`")
             return
 
-        entry = find_spawn_rate(canonical_name, spawn_data)
-        if entry is None and canonical_name.lower() != pokemon.strip().lower():
-            entry = find_spawn_rate(pokemon.strip(), spawn_data)
+        entries = find_spawn_rate_family(canonical_name, spawn_data)
+        # If the family search found nothing and we translated a name, also try the raw input
+        if not entries and canonical_name.lower() != pokemon.strip().lower():
+            entries = find_spawn_rate_family(pokemon.strip(), spawn_data)
 
-        if entry is None:
+        if not entries:
             await interaction.followup.send(
                 f"❌ No spawn rate data found for **{canonical_name}**. It may not spawn in the wild."
             )
             return
 
-        dex_num = entry["dex"]
-        embed = discord.Embed(title=f"Spawn Rate — {entry['name']}", color=EMBED_COLOR)
-        embed.set_thumbnail(url=f"https://cdn.poketwo.net/images/{dex_num}.png")
-        embed.add_field(name="Spawn Chance", value=entry["chance"],     inline=True)
-        embed.add_field(name="Percentage",   value=entry["chance_pct"], inline=True)
-        if pokemon.strip().lower() != entry["name"].lower():
-            embed.set_footer(text=f'Searched: "{pokemon.strip()}"')
+        # Build a single embed listing all variants
+        title = f"Spawn Rate — {canonical_name}"
+        if pokemon.strip().lower() != canonical_name.lower():
+            title += f" (searched: \"{pokemon.strip()}\")"
+        embed = discord.Embed(title=title, color=EMBED_COLOR)
+
+        # Thumbnail from the first (exact/base) entry
+        embed.set_thumbnail(url=f"https://cdn.poketwo.net/images/{entries[0]['dex']}.png")
+
+        for entry in entries:
+            embed.add_field(
+                name=entry["name"],
+                value=f"{entry['chance']}  ({entry['chance_pct']})",
+                inline=False,
+            )
+
         await interaction.followup.send(embed=embed)
 
     @commands.command(name="spawnrate", aliases=["sr"])
     async def spawnrate_prefix(self, ctx: commands.Context, *, pokemon_name: str = None):
-        """Show the spawn rate for a Pokémon. Usage: p!sr <pokemon>"""
+        """Show spawn rates for a Pokémon and all its regional forms. Usage: p!sr <pokemon>"""
         if not pokemon_name:
-            await ctx.send("Please provide a Pokémon name. Example: `p!sr geodude`")
+            await ctx.send("Please provide a Pokémon name. Example: `p!sr meowth`")
             return
 
         async with ctx.typing():
@@ -589,23 +618,33 @@ class PokeTools(commands.Cog, name="PokeTools"):
                 await ctx.send(f"❌ Failed to fetch spawn rate data: `{e}`\nPlease try again later.")
                 return
 
-            entry = find_spawn_rate(canonical_name, spawn_data)
-            if entry is None and canonical_name.lower() != pokemon_name.strip().lower():
-                entry = find_spawn_rate(pokemon_name.strip(), spawn_data)
+            entries = find_spawn_rate_family(canonical_name, spawn_data)
+            # If the family search found nothing and we translated a name, also try the raw input
+            if not entries and canonical_name.lower() != pokemon_name.strip().lower():
+                entries = find_spawn_rate_family(pokemon_name.strip(), spawn_data)
 
-            if entry is None:
+            if not entries:
                 await ctx.send(
                     f"❌ No spawn rate data found for **{canonical_name}**. It may not spawn in the wild."
                 )
                 return
 
-            dex_num = entry["dex"]
-            embed = discord.Embed(title=f"Spawn Rate — {entry['name']}", color=EMBED_COLOR)
-            embed.set_thumbnail(url=f"https://cdn.poketwo.net/images/{dex_num}.png")
-            embed.add_field(name="Spawn Chance", value=entry["chance"],     inline=True)
-            embed.add_field(name="Percentage",   value=entry["chance_pct"], inline=True)
-            if pokemon_name.strip().lower() != entry["name"].lower():
-                embed.set_footer(text=f'Searched: "{pokemon_name.strip()}"')
+            # Build a single embed listing all variants
+            title = f"Spawn Rate — {canonical_name}"
+            if pokemon_name.strip().lower() != canonical_name.lower():
+                title += f" (searched: \"{pokemon_name.strip()}\")"
+            embed = discord.Embed(title=title, color=EMBED_COLOR)
+
+            # Thumbnail from the first (exact/base) entry
+            embed.set_thumbnail(url=f"https://cdn.poketwo.net/images/{entries[0]['dex']}.png")
+
+            for entry in entries:
+                embed.add_field(
+                    name=entry["name"],
+                    value=f"{entry['chance']}  ({entry['chance_pct']})",
+                    inline=False,
+                )
+
             await ctx.send(embed=embed)
 
     # ================================================================ #
