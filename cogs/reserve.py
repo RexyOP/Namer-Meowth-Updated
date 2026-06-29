@@ -1,4 +1,4 @@
-"""Reserve system — server-specific Pokémon reservation for admins and allowed roles."""
+"""Reserve system — server-specific Pokémon reservation for admins and allowed roless."""
 
 import math
 import discord
