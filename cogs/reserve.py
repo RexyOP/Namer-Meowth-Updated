@@ -305,6 +305,7 @@ class Reserve(commands.Cog):
             name="🔐 **Admin Commands** (Admin/Owner only)",
             value=(
                 f"`{p}r add p @user <pokemon,...>` — Add Pokemon to user's reserves\n"
+                f"`{p}r add p <pokemon,...> @user` — Same (mention at end)\n"
                 f"`{p}r add pokemon @user <pokemon,...>` — Same as above\n"
                 f"`{p}r add cat @user <category>` — Add category to user's reserves\n"
                 f"`{p}r remove p @user <pokemon,...>` — Remove Pokemon from user's reserves\n"
@@ -343,11 +344,14 @@ class Reserve(commands.Cog):
     # ------------------------------------------------------------------
     @reserve_group.command(name="add")
     async def reserve_add(
-        self, ctx, subtype: str, user: discord.User, *, pokemon_input: str
+        self, ctx, subtype: str, *, rest: str
     ):
         """
         Add pokemon or category to a user's reserves.
         Subtype: 'pokemon'/'poke'/'p' or 'cat'/'category'
+        Supports:
+          p!r add p @user <pokemon,...>
+          p!r add p <pokemon,...> @user
         """
         if not await self._has_reserve_permission(ctx):
             await ctx.reply(
@@ -357,6 +361,56 @@ class Reserve(commands.Cog):
             return
 
         subtype = subtype.lower()
+
+        # --- Resolve user + pokemon_input from `rest` ---
+        # Supports both:
+        #   @user <pokemon,...>   (user first)
+        #   <pokemon,...> @user   (user last)
+        import re
+        mention_pattern = re.compile(r"<@!?(\d+)>")
+
+        rest = rest.strip()
+        user = None
+        pokemon_input = None
+
+        # Check if user mention/ID is at the START
+        # Match: <@id> or bare numeric ID at the very beginning
+        start_mention = re.match(r"^(<@!?\d+>|\d{17,20})\s+([\s\S]+)$", rest)
+        # Check if user mention is at the END
+        end_mention = re.match(r"^([\s\S]+?)\s+(<@!?\d+>|\d{17,20})$", rest)
+
+        async def resolve_user(token: str):
+            m = mention_pattern.match(token)
+            uid = int(m.group(1)) if m else int(token)
+            try:
+                return await self.bot.fetch_user(uid)
+            except Exception:
+                return None
+
+        if start_mention:
+            user_token = start_mention.group(1)
+            pokemon_input = start_mention.group(2).strip()
+            user = await resolve_user(user_token)
+        elif end_mention:
+            pokemon_input = end_mention.group(1).strip()
+            user_token = end_mention.group(2)
+            user = await resolve_user(user_token)
+
+        if user is None:
+            await ctx.reply(
+                f"❌ Could not find that user. Use a @mention or user ID.\n"
+                f"Usage: `{ctx.prefix}r add p @user <pokemon,...>` or `{ctx.prefix}r add p <pokemon,...> @user`",
+                mention_author=False,
+            )
+            return
+
+        if not pokemon_input:
+            await ctx.reply(
+                f"❌ Please provide Pokémon names or a category.\n"
+                f"Usage: `{ctx.prefix}r add p @user <pokemon,...>` or `{ctx.prefix}r add p <pokemon,...> @user`",
+                mention_author=False,
+            )
+            return
 
         if subtype in ("pokemon", "poke", "p"):
             valid, invalid = self._resolve_pokemon_names(pokemon_input)
@@ -433,8 +487,9 @@ class Reserve(commands.Cog):
     async def reserve_add_error(self, ctx, error):
         if isinstance(error, commands.MissingRequiredArgument):
             await ctx.reply(
-                f"❌ Usage: `{ctx.prefix}r add pokemon|poke|p <@user> <pokemon,...>` "
-                f"or `{ctx.prefix}r add cat|category <@user> <category>`",
+                f"❌ Usage: `{ctx.prefix}r add pokemon|poke|p @user <pokemon,...>` "
+                f"or `{ctx.prefix}r add pokemon|poke|p <pokemon,...> @user`\n"
+                f"Category: `{ctx.prefix}r add cat|category @user <category>`",
                 mention_author=False,
             )
         elif isinstance(error, commands.BadArgument):
