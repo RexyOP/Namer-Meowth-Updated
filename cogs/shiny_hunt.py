@@ -48,7 +48,7 @@ class ShinyHunt(commands.Cog):
         # Otherwise return the Pokemon's name
         return pokemon.get('name', pokemon_name)
 
-    @commands.command(name="sh", aliases=["hunt", "shinyhunt"])
+    @commands.group(name="sh", aliases=["hunt", "shinyhunt"], invoke_without_command=True)
     async def shiny_hunt_command(self, ctx, *, args: str = None):
         """Manage shiny hunt
 
@@ -163,6 +163,89 @@ class ShinyHunt(commands.Cog):
         else:
             hunt_list = ", ".join(f"**{p}**" for p in pokemon_to_hunt)
             await ctx.reply(f"✅ Now hunting **{len(pokemon_to_hunt)}** variants: {hunt_list}", mention_author=False)
+
+    @staticmethod
+    def _build_who_embeds(title: str, user_ids, color=EMBED_COLOR):
+        """Build one or more embeds mentioning every user_id given.
+
+        Splits into multiple embeds if the mention list would exceed a
+        single embed description's comfortable size.
+        """
+        if not user_ids:
+            return []
+
+        mentions = [f"<@{uid}>" for uid in user_ids]
+
+        max_chars = 3800
+        pages = []
+        current = []
+        current_len = 0
+
+        for mention in mentions:
+            needed = len(mention) + (2 if current else 0)  # ", " separator
+            if current and current_len + needed > max_chars:
+                pages.append(current)
+                current = [mention]
+                current_len = len(mention)
+            else:
+                current.append(mention)
+                current_len += needed
+
+        if current:
+            pages.append(current)
+
+        total_pages = len(pages)
+        embeds = []
+        for i, page in enumerate(pages, start=1):
+            embed_title = title if total_pages == 1 else f"{title} ({i}/{total_pages})"
+            embed = discord.Embed(
+                title=embed_title,
+                description=", ".join(page),
+                color=color,
+            )
+            embed.set_footer(text=f"{len(user_ids)} total")
+            embeds.append(embed)
+
+        return embeds
+
+    @shiny_hunt_command.command(name="who", aliases=["hunters"])
+    async def who_hunts(self, ctx, *, pokemon_name: str):
+        """Check who in this server is hunting a Pokemon
+
+        Example:
+            p!sh who Eevee
+        """
+        pokemon = find_pokemon_by_name_flexible(pokemon_name, self.pokemon_data)
+
+        if not pokemon or not pokemon.get('name'):
+            await ctx.reply(f"❌ Invalid Pokemon name: {pokemon_name}", mention_author=False)
+            return
+
+        resolved_name = pokemon['name']
+
+        afk_users = await self.db.get_shiny_hunt_afk_users()
+        raw_hunters = await self.db.get_shiny_hunters_for_pokemon(
+            ctx.guild.id, [resolved_name], afk_users
+        )
+        user_ids = [user_id for user_id, is_afk in raw_hunters if not is_afk]
+
+        if not user_ids:
+            await ctx.reply(f"No one in this server is hunting **{resolved_name}**.", mention_author=False)
+            return
+
+        embeds = self._build_who_embeds(f"✨ Hunters of {resolved_name}", user_ids)
+
+        await ctx.reply(
+            embeds=embeds,
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions(users=True),
+        )
+
+    @app_commands.command(name="whohunts", description="See who in this server is hunting a Pokémon")
+    @app_commands.describe(pokemon_name="The Pokémon to check, e.g. 'Eevee'")
+    async def slash_who_hunts(self, interaction: discord.Interaction, pokemon_name: str):
+        ctx = await commands.Context.from_interaction(interaction)
+        await self.who_hunts(ctx, pokemon_name=pokemon_name)
 
     # ------------------------------------------------------------------
     # Slash Commands  (registered automatically with the cog)
