@@ -376,7 +376,7 @@ class Collection(commands.Cog):
         not_found_pokemon = []
         unknown_sr = []
 
-        # ── 3. Resolve --user → that user's collection ─────────────────────
+        # ── 3. Resolve --user → the overlap between your collection and theirs ─
         if target_user_id is not None:
             if target_user_id == ctx.author.id:
                 await ctx.reply("You can't use `--user` with yourself.", mention_author=False)
@@ -389,7 +389,22 @@ class Collection(commands.Cog):
                     allowed_mentions=NO_MENTIONS,
                 )
                 return
-            removed_pokemon.extend(other_collection)
+
+            # Only Pokemon that are in BOTH your collection and theirs should
+            # be reported/removed - not their entire collection.
+            own_collection = await self.db.get_user_collection(ctx.author.id, ctx.guild.id)
+            own_lower = {p.lower() for p in (own_collection or [])}
+            common_pokemon = [p for p in other_collection if p.lower() in own_lower]
+
+            if not common_pokemon:
+                await ctx.reply(
+                    f"You and <@{target_user_id}> have no Pokémon in common, so nothing was removed.",
+                    mention_author=False,
+                    allowed_mentions=NO_MENTIONS,
+                )
+                return
+
+            removed_pokemon.extend(common_pokemon)
 
         # ── 4. Resolve --sr values → Pokemon names ─────────────────────────
         for sr in sr_values:
@@ -672,6 +687,80 @@ class Collection(commands.Cog):
             msg = await ctx.reply(embed=view.build_embed(1), view=view, mention_author=False)
             view.message = msg
 
+    @staticmethod
+    def _build_who_embeds(title: str, user_ids: List[int], color=EMBED_COLOR) -> List[discord.Embed]:
+        """Build one or more embeds mentioning every user_id given.
+
+        Splits into multiple embeds if the mention list would exceed a
+        single embed description's comfortable size.
+        """
+        if not user_ids:
+            return []
+
+        mentions = [f"<@{uid}>" for uid in user_ids]
+
+        max_chars = 3800
+        pages: List[List[str]] = []
+        current: List[str] = []
+        current_len = 0
+
+        for mention in mentions:
+            needed = len(mention) + (2 if current else 0)  # ", " separator
+            if current and current_len + needed > max_chars:
+                pages.append(current)
+                current = [mention]
+                current_len = len(mention)
+            else:
+                current.append(mention)
+                current_len += needed
+
+        if current:
+            pages.append(current)
+
+        total_pages = len(pages)
+        embeds = []
+        for i, page in enumerate(pages, start=1):
+            embed_title = title if total_pages == 1 else f"{title} ({i}/{total_pages})"
+            embed = discord.Embed(
+                title=embed_title,
+                description=", ".join(page),
+                color=color,
+            )
+            embed.set_footer(text=f"{len(user_ids)} total")
+            embeds.append(embed)
+
+        return embeds
+
+    @collection_group.command(name="who")
+    async def collection_who(self, ctx, *, pokemon_name: str):
+        """Check who in this server has a Pokemon in their collection
+
+        Example:
+            p!cl who Eevee
+        """
+        pokemon = find_pokemon_by_name_flexible(pokemon_name, self.pokemon_data)
+
+        if not pokemon or not pokemon.get('name'):
+            await ctx.reply(f"❌ Invalid Pokemon name: {pokemon_name}", mention_author=False)
+            return
+
+        resolved_name = pokemon['name']
+
+        afk_users = await self.db.get_collection_afk_users()
+        user_ids = await self.db.get_collectors_for_pokemon(ctx.guild.id, [resolved_name], afk_users)
+
+        if not user_ids:
+            await ctx.reply(f"No one in this server is collecting **{resolved_name}**.", mention_author=False)
+            return
+
+        embeds = self._build_who_embeds(f"📦 Collectors of {resolved_name}", user_ids)
+
+        await ctx.reply(
+            embeds=embeds,
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions(users=True),
+        )
+
     # ------------------------------------------------------------------
     # Slash Commands  (registered automatically with the cog)
     # ------------------------------------------------------------------
@@ -704,6 +793,12 @@ class Collection(commands.Cog):
     async def slash_collection_clear(self, interaction: discord.Interaction):
         ctx = await commands.Context.from_interaction(interaction)
         await self.collection_clear(ctx)
+
+    @cl_group.command(name="who", description="See who in this server is collecting a Pokémon")
+    @app_commands.describe(pokemon_name="The Pokémon to check, e.g. 'Eevee'")
+    async def slash_collection_who(self, interaction: discord.Interaction, pokemon_name: str):
+        ctx = await commands.Context.from_interaction(interaction)
+        await self.collection_who(ctx, pokemon_name=pokemon_name)
 
 
 async def setup(bot):
