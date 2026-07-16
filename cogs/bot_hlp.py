@@ -72,13 +72,18 @@ class Help(commands.Cog):
                     "Remove Pokémon from your collection\n"
                     f"• `{prefix}cl remove Pikachu`\n"
                     f"• `{prefix}cl remove --sr 899` (by spawn rate)\n"
-                    f"• `{prefix}cl remove --user @someone`"
+                    f"• `{prefix}cl remove --user @someone` (only removes Pokémon you both have)"
                 ),
                 inline=False,
             )
             embed.add_field(name=f"`{prefix}cl list`",  value="View your collection (paginated)",     inline=False)
             embed.add_field(name=f"`{prefix}cl raw`",   value="View as raw text grouped by SR tier",  inline=False)
             embed.add_field(name=f"`{prefix}cl clear`", value="⚠️ Clear your entire collection",      inline=False)
+            embed.add_field(
+                name=f"`{prefix}cl who <pokemon>`",
+                value=f"See everyone in this server collecting a Pokémon (pings them) — `{prefix}cl who Eevee`",
+                inline=False,
+            )
             embed.add_field(
                 name="💡 How It Works",
                 value=(
@@ -122,6 +127,11 @@ class Help(commands.Cog):
             embed.add_field(name=f"`{prefix}sh`",               value="Check your current shiny hunt",               inline=False)
             embed.add_field(name=f"`{prefix}sh <pokemon>`",     value="Start hunting a Pokémon (`{prefix}sh Pikachu`)", inline=False)
             embed.add_field(name=f"`{prefix}sh clear`",         value="Stop hunting (also accepts `none` / `stop`)", inline=False)
+            embed.add_field(
+                name=f"`{prefix}sh who <pokemon>`",
+                value=f"See everyone in this server hunting a Pokémon (pings them) — `{prefix}sh who Eevee`",
+                inline=False,
+            )
             embed.add_field(name="💡 Note", value="You can hunt one or more Pokémon (same dex) at a time per server.", inline=False)
 
         # ── Settings ──────────────────────────────────────────────────
@@ -778,7 +788,7 @@ class Help(commands.Cog):
             )
             embed.add_field(
                 name="📦 Collection",
-                value=f"`{prefix}cl add` • `{prefix}cl remove` • `{prefix}cl list` • `{prefix}cl raw` • `{prefix}cl clear`",
+                value=f"`{prefix}cl add` • `{prefix}cl remove` • `{prefix}cl list` • `{prefix}cl raw` • `{prefix}cl clear` • `{prefix}cl who`",
                 inline=False,
             )
             embed.add_field(
@@ -789,7 +799,7 @@ class Help(commands.Cog):
                 ),
                 inline=False,
             )
-            embed.add_field(name="✨ Shiny Hunt",     value=f"`{prefix}sh` • `{prefix}sh <pokemon>` • `{prefix}sh clear`",                     inline=False)
+            embed.add_field(name="✨ Shiny Hunt",     value=f"`{prefix}sh` • `{prefix}sh <pokemon>` • `{prefix}sh clear` • `{prefix}sh who`",                     inline=False)
             embed.add_field(name="🔷 Type & Region",  value=f"`{prefix}tp` • `{prefix}tp <types>` • `{prefix}rp` • `{prefix}rp <regions>`",    inline=False)
             embed.add_field(
                 name="⚙️ Settings",
