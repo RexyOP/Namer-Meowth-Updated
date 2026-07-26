@@ -2671,5 +2671,245 @@
     "is_variant": false,
     "variant_of": null,
     "rarity": "Event"
-  }
+  },
+  {
+    "dex_number": 217,
+    "name": "Proud Taipeier Ursaring",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 405,
+    "name": "Proud Paulistano Luxray",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 628,
+    "name": "Proud New Yorker Braviary",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Alloace Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Androgyne Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Androsexual Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Aroace Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Aromantic Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Asexual Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Autoromantic Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Bisexual Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Demiromantic Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Demisexual Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Desinoromantic Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Gay Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Gender Creative Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Genderfluid Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Genderqueer Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Gynsexual Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Lesbian Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Maverique Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Neutrois Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Non-Binary Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Pansexual Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Polysexual Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Pride Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Queer Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 666,
+    "name": "Transgender Flag Vivillon",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 668,
+    "name": "Proud Amsterdammer Pyroar",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 775,
+    "name": "Proud Sydneysider Komala",
+    "other_names": {},
+    "is_variant": false,
+    "variant_of": null,
+    "rarity": "Event"
+  },
 ]
