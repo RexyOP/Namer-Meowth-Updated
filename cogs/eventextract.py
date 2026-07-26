@@ -26,7 +26,15 @@ from discord import app_commands
 from discord.ext import commands
 
 from config import EMBED_COLOR
-from poketools import _resolve_message
+
+try:
+    # Normal case: eventextract.py lives in the same package as poketools.py
+    # (e.g. both under a `cogs` package), so relative import works.
+    from .poketools import _resolve_message
+except ImportError:
+    # Fallback for setups where cogs are loaded as top-level modules
+    # rather than as a package (no relative import available).
+    from poketools import _resolve_message
 
 # ------------------------------------------------------------------ #
 #  Parsing helpers                                                     #
