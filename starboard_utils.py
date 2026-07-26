@@ -21,7 +21,7 @@ GENDER_DIFFERENCE_POKEMON = {
     "Dodrio", "Rhydon", "Ledyba", "Ledian", "Wooper", "Gligar", "Scizor",
     "Dustox", "Gulpin", "Swalot", "Starly", "Bidoof", "Luxray", "Combee",
     "Buizel", "Gabite", "Snover", "Pyroar", "Zubat", "Gloom", "Doduo", "Hypno",
-    "Eevee", "Aipom", "Numel", "Shinx", "Luxio", "Gible", "Xatu"
+    "Eevee", "Aipom", "Numel", "Shinx", "Luxio", "Gible", "Xatu", "Proud Amsterdammer Pyroar"
 }
 
 def load_cdn_mapping() -> dict:
