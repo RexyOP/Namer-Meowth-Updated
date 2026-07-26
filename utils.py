@@ -52,6 +52,24 @@ def normalize_pokemon_name(name: str) -> str:
 
     return without_accents.strip()
 
+def _name_matches(pokemon: Dict, normalized_search: str) -> bool:
+    """Does this pokemon's main name or any other_names entry match (accent-insensitive)?"""
+    if normalize_pokemon_name(pokemon.get('name', '')).lower() == normalized_search:
+        return True
+
+    other_names = pokemon.get('other_names')
+    if other_names and isinstance(other_names, dict):
+        for lang_name_data in other_names.values():
+            if isinstance(lang_name_data, str):
+                if normalize_pokemon_name(lang_name_data).lower() == normalized_search:
+                    return True
+            elif isinstance(lang_name_data, list):
+                for lang_name in lang_name_data:
+                    if lang_name and isinstance(lang_name, str):
+                        if normalize_pokemon_name(lang_name).lower() == normalized_search:
+                            return True
+    return False
+
 def find_pokemon_by_name(name: str, pokemon_data: List[Dict]) -> Optional[Dict]:
     """Find Pokemon by exact name match"""
     if not name or not pokemon_data:
@@ -78,30 +96,51 @@ def find_pokemon_by_name(name: str, pokemon_data: List[Dict]) -> Optional[Dict]:
     return None
 
 def find_pokemon_by_name_flexible(search_name: str, pokemon_data: List[Dict]) -> Optional[Dict]:
-    """Find Pokemon with flexible matching (accent-insensitive)"""
+    """Find the FIRST Pokemon with flexible matching (accent-insensitive).
+
+    Only returns one result — if several Pokemon share the same main name or
+    other-name (e.g. two different event mons both list "Pride Vivillon" as
+    an alt English name), everything past the first is silently ignored.
+    Use find_all_pokemon_by_name_flexible() when you want every match.
+    """
     if not search_name or not pokemon_data:
         return None
 
     normalized_search = normalize_pokemon_name(search_name).lower()
 
     for pokemon in pokemon_data:
-        # Check main name
-        if normalize_pokemon_name(pokemon.get('name', '')).lower() == normalized_search:
+        if _name_matches(pokemon, normalized_search):
             return pokemon
-
-        # Check other language names
-        other_names = pokemon.get('other_names')
-        if other_names and isinstance(other_names, dict):
-            for lang_name_data in other_names.values():
-                if isinstance(lang_name_data, str):
-                    if normalize_pokemon_name(lang_name_data).lower() == normalized_search:
-                        return pokemon
-                elif isinstance(lang_name_data, list):
-                    for lang_name in lang_name_data:
-                        if lang_name and isinstance(lang_name, str):
-                            if normalize_pokemon_name(lang_name).lower() == normalized_search:
-                                return pokemon
     return None
+
+def find_all_pokemon_by_name_flexible(search_name: str, pokemon_data: List[Dict]) -> List[Dict]:
+    """Find EVERY Pokemon whose main name or any other_names entry matches
+    search_name (accent-insensitive).
+
+    Unlike find_pokemon_by_name_flexible(), this doesn't stop at the first
+    hit — if "Pride Vivillon" is listed as an alt name on two different
+    Pokemon entries, both are returned. Results are deduplicated by main
+    name (case-insensitive) in case the same Pokemon somehow appears twice
+    in pokemon_data.
+    """
+    if not search_name or not pokemon_data:
+        return []
+
+    normalized_search = normalize_pokemon_name(search_name).lower()
+
+    matches: List[Dict] = []
+    seen_names = set()
+    for pokemon in pokemon_data:
+        if not _name_matches(pokemon, normalized_search):
+            continue
+        canonical = pokemon.get('name', '')
+        key = canonical.lower()
+        if key in seen_names:
+            continue
+        seen_names.add(key)
+        matches.append(pokemon)
+
+    return matches
 
 def get_pokemon_with_variants(pokemon_name: str, pokemon_data: List[Dict]) -> List[str]:
     """
