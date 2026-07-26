@@ -10,6 +10,7 @@ from typing import List, Dict
 from utils import (
     load_pokemon_data,
     find_pokemon_by_name_flexible,
+    find_all_pokemon_by_name_flexible,
     normalize_pokemon_name,
     get_pokemon_with_variants,
     is_rare_pokemon,
@@ -274,16 +275,21 @@ class Collection(commands.Cog):
                 else:
                     invalid_pokemon.append(name)
             else:
-                # Single Pokemon
-                pokemon = find_pokemon_by_name_flexible(name, self.pokemon_data)
+                # Single Pokemon — but a name might match more than one
+                # entry (e.g. two event mons both list the same alt name),
+                # so add all of them, not just the first.
+                matches = find_all_pokemon_by_name_flexible(name, self.pokemon_data)
 
-                if pokemon and pokemon.get('name'):
-                    added_pokemon.append(pokemon['name'])
-                    # Check if this pokemon has other forms/variants
-                    base_name = pokemon['name']
-                    variants = get_pokemon_with_variants(base_name, self.pokemon_data)
-                    if variants and len(variants) > 1:
-                        has_forms_hints.append(base_name)
+                if matches:
+                    for pokemon in matches:
+                        canonical = pokemon.get('name')
+                        if not canonical:
+                            continue
+                        added_pokemon.append(canonical)
+                        # Check if this pokemon has other forms/variants
+                        variants = get_pokemon_with_variants(canonical, self.pokemon_data)
+                        if variants and len(variants) > 1:
+                            has_forms_hints.append(canonical)
                 else:
                     invalid_pokemon.append(name)
 
@@ -434,9 +440,12 @@ class Collection(commands.Cog):
                     else:
                         not_found_pokemon.append(name)
                 else:
-                    pokemon = find_pokemon_by_name_flexible(name, self.pokemon_data)
-                    if pokemon and pokemon.get('name'):
-                        removed_pokemon.append(pokemon['name'])
+                    matches = find_all_pokemon_by_name_flexible(name, self.pokemon_data)
+                    if matches:
+                        for pokemon in matches:
+                            canonical = pokemon.get('name')
+                            if canonical:
+                                removed_pokemon.append(canonical)
                     else:
                         not_found_pokemon.append(name)
 
