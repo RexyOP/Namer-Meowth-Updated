@@ -136,7 +136,7 @@ def build_eventdata_json(entries: Dict[Tuple[int, str], dict]) -> io.BytesIO:
             "dex_number": e["dex_number"],
             "name": e["name"],
             "other_names": e["other_names"],
-            "is_variant": False,
+            "is_variant": True,
             "variant_of": None,
             "rarity": "Event",
         }
@@ -170,11 +170,23 @@ def build_typeandregion_csv(entries: Dict[Tuple[int, str], dict]) -> io.BytesIO:
     return buf
 
 
+def build_best_names_json(entries: Dict[Tuple[int, str], dict]) -> io.BytesIO:
+    """
+    "Main Name": ""  for every captured entry — left blank intentionally so
+    the "best"/common nickname can be filled in by hand afterwards.
+    """
+    payload = {e["name"]: "" for e in _sorted_entries(entries)}
+    buf = io.BytesIO(json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"))
+    buf.seek(0)
+    return buf
+
+
 def build_output_files(entries: Dict[Tuple[int, str], dict]) -> List[discord.File]:
     return [
         discord.File(build_eventdata_json(entries), filename="eventdata.json"),
         discord.File(build_cdn_mapping_csv(entries), filename="pokemon_cdn_mapping.csv"),
         discord.File(build_typeandregion_csv(entries), filename="typeandregion.csv"),
+        discord.File(build_best_names_json(entries), filename="best_names.json"),
     ]
 
 
