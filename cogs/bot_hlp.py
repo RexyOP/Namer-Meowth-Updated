@@ -14,7 +14,7 @@ class Help(commands.Cog):
     async def help_command(self, ctx, category: str = None):
         """Show help information
 
-        Categories: collection, category, hunt, pings, settings, prediction, starboard, helpful, incense, captcha, reserve, channels, listgen, owner, all
+        Categories: collection, category, hunt, pings, settings, prediction, starboard, helpful, eventextract, incense, captcha, reserve, channels, listgen, owner, all
         """
         prefix = BOT_PREFIX[0]
         is_owner = await self.bot.is_owner(ctx.author)
@@ -34,6 +34,7 @@ class Help(commands.Cog):
             embed.add_field(name="📺 Channels",         value=f"`{prefix}help channels` — Configure all bot channels (starboard, captcha…)",inline=False)
             embed.add_field(name="🔮 Prediction",       value=f"`{prefix}help prediction` — Manual Pokémon prediction",                   inline=False)
             embed.add_field(name="🔍 Helpful",          value=f"`{prefix}help helpful` — Spawn rates, shiny rates & hint solver",          inline=False)
+            embed.add_field(name="📥 Event Extract",    value=f"`{prefix}help eventextract` — Export event Pokémon data from embeds",     inline=False)
             embed.add_field(name="🔥 Incense",          value=f"`{prefix}help incense` — Manage Poketwo incense sessions",                 inline=False)
             embed.add_field(name="🔐 Captcha",          value=f"`{prefix}help captcha` — Captcha alert information",                       inline=False)
             embed.add_field(name="💾 Reserve",          value=f"`{prefix}help reserve` — Server-specific Pokémon reservation system",      inline=False)
@@ -88,7 +89,8 @@ class Help(commands.Cog):
                 name="💡 How It Works",
                 value=(
                     "• When a Pokémon you collect spawns, you get pinged\n"
-                    "• Use cl add `Furfrou all` to add every Furfrou variant explicitly as adding only furfrou pings for furfrou only"
+                    "• Use cl add `Furfrou all` to add every Furfrou variant explicitly as adding only furfrou pings for furfrou only\n"
+                    "• If a name matches more than one Pokémon (e.g. a shared alt/nickname), **all** matches are added, not just the first"
                 ),
                 inline=False,
             )
@@ -132,7 +134,14 @@ class Help(commands.Cog):
                 value=f"See everyone in this server hunting a Pokémon (pings them) — `{prefix}sh who Eevee`",
                 inline=False,
             )
-            embed.add_field(name="💡 Note", value="You can hunt one or more Pokémon (same dex) at a time per server.", inline=False)
+            embed.add_field(
+                name="💡 Note",
+                value=(
+                    "You can hunt one or more Pokémon (same dex) at a time per server.\n"
+                    "If a name matches more than one Pokémon (e.g. a shared alt/nickname), **all** matches are hunted, not just the first."
+                ),
+                inline=False,
+            )
 
         # ── Settings ──────────────────────────────────────────────────
         elif category in ["settings", "setting", "config", "afk"]:
@@ -526,6 +535,52 @@ class Help(commands.Cog):
                 inline=False,
             )
 
+        # ── Event Extract ─────────────────────────────────────────────
+        elif category in ["eventextract", "evtx", "event", "eventdata"]:
+            embed = discord.Embed(
+                title="📥 Event Extract Commands",
+                description=(
+                    "Reply to a Pokétwo pokédex embed and the bot will watch it for edits — "
+                    "browse through variants (select menu / buttons) and each one gets captured "
+                    "automatically. Stop when you're done to get exported files."
+                ),
+                color=EMBED_COLOR,
+            )
+            embed.add_field(
+                name=f"`{prefix}extractevent` / `{prefix}eventextract` / `{prefix}evtx` / `{prefix}startevent`",
+                value=(
+                    "Start monitoring a Pokétwo pokédex embed\n"
+                    f"• Reply to a Pokétwo pokédex embed with `{prefix}extractevent`\n"
+                    "• Browse variants — every edit to the message is captured automatically\n"
+                    "• A progress embed with a ⏹️ Stop button updates live as you go\n"
+                    "Also available as the **Start Event Extract** right-click context menu"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name=f"`{prefix}stopextract` / `{prefix}stopeventextract` / `{prefix}evtxstop`",
+                value=(
+                    "Manually stop an active extraction and get your files\n"
+                    "(fallback for if the ⏹️ Stop button ever fails)"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="📄 Files You Get",
+                value=(
+                    "• `eventdata.json` — dex number, name, other-language names, rarity\n"
+                    "• `pokemon_cdn_mapping.csv` — name → CDN image number\n"
+                    "• `typeandregion.csv` — dex number, name, region, type1, type2\n"
+                    "• `best_names.json` — name → blank template for you to fill in the best/shortest name"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="💡 Note",
+                value="Only the person who started the extraction can press Stop. Deleting the watched message also auto-finalizes and sends whatever was captured.",
+                inline=False,
+            )
+
         # ── Owner ─────────────────────────────────────────────────────
         elif category in ["owner", "admin", "botowner"]:
             if not is_owner:
@@ -843,6 +898,14 @@ class Help(commands.Cog):
                 inline=False,
             )
             embed.add_field(
+                name="📥 Event Extract",
+                value=(
+                    f"`{prefix}extractevent` / `{prefix}evtx` — watch a replied Pokétwo embed for edits  •  **Right-click:** Start Event Extract\n"
+                    f"`{prefix}stopextract` — manually stop an active extraction"
+                ),
+                inline=False,
+            )
+            embed.add_field(
                 name="🔥 Incense",
                 value=(
                     f"`{prefix}inc toggle` • `{prefix}inc cat add/remove/list`\n"
@@ -897,7 +960,7 @@ class Help(commands.Cog):
             await ctx.reply(
                 f"❌ Unknown category: `{category}`\n"
                 f"Available: `collection`, `category`, `hunt`, `pings`, `settings`, `roles`, `channels`, "
-                f"`prediction`, `starboard`, `helpful`, `incense`, `captcha`, `reserve`, `listgen`, "
+                f"`prediction`, `starboard`, `helpful`, `eventextract`, `incense`, `captcha`, `reserve`, `listgen`, "
                 f"{'`owner`, ' if is_owner else ''}`all`\n"
                 f"Use `{prefix}help` to see the main help menu.",
                 mention_author=False,
@@ -927,7 +990,8 @@ class Help(commands.Cog):
                 "• 🔮 **Dual Model Prediction** — Automatically identifies Poketwo spawns\n"
                 "• ⭐ **Starboard Logging** — Log rare catches, hatches, and unboxes\n"
                 "• 🔕 **AFK Mode** — Disable pings when you're away\n"
-                "• 🏷️ **Best Name** — Optionally show shortest known name per prediction"
+                "• 🏷️ **Best Name** — Optionally show shortest known name per prediction\n"
+                "• 📥 **Event Extract** — Export event Pokémon data straight from Pokétwo embeds"
             ),
             inline=False,
         )
@@ -994,7 +1058,7 @@ class Help(commands.Cog):
     # Slash Commands
     # ------------------------------------------------------------------
     @app_commands.command(name="help", description="Show help information for the bot")
-    @app_commands.describe(category="Category: collection, category, hunt, pings, settings, roles, channels, prediction, starboard, helpful, incense, captcha, reserve, listgen, all")
+    @app_commands.describe(category="Category: collection, category, hunt, pings, settings, roles, channels, prediction, starboard, helpful, eventextract, incense, captcha, reserve, listgen, all")
     async def slash_help(self, interaction: discord.Interaction, category: str = None):
         ctx = await commands.Context.from_interaction(interaction)
         await self.help_command(ctx, category=category)
