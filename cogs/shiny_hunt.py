@@ -5,6 +5,7 @@ from discord.ext import commands
 from utils import (
     load_pokemon_data, 
     find_pokemon_by_name_flexible,
+    find_all_pokemon_by_name_flexible,
     get_pokemon_with_variants,
     normalize_pokemon_name
 )
@@ -89,6 +90,7 @@ class ShinyHunt(commands.Cog):
         # Parse Pokemon names
         pokemon_to_hunt = []
         using_all = False
+        expansion_notes = []  # (typed_name, [canonical_names]) for names that matched >1 Pokemon
 
         # Check if using "all" keyword (support both "furfrou all" and "all furfrou")
         if args_lower.endswith(" all") or args_lower.startswith("all "):
@@ -110,13 +112,19 @@ class ShinyHunt(commands.Cog):
             pokemon_names = [name.strip() for name in args.split(",") if name.strip()]
 
             for name in pokemon_names:
-                pokemon = find_pokemon_by_name_flexible(name, self.pokemon_data)
+                matches = find_all_pokemon_by_name_flexible(name, self.pokemon_data)
 
-                if not pokemon or not pokemon.get('name'):
+                if not matches:
                     await ctx.reply(f"❌ Invalid Pokemon name: {name}", mention_author=False)
                     return
 
-                pokemon_to_hunt.append(pokemon['name'])
+                canonical_names = [p['name'] for p in matches if p.get('name')]
+                if len(canonical_names) > 1:
+                    expansion_notes.append((name, canonical_names))
+
+                for canonical in canonical_names:
+                    if canonical not in pokemon_to_hunt:
+                        pokemon_to_hunt.append(canonical)
 
         if not pokemon_to_hunt:
             await ctx.reply("Please provide a Pokemon name to hunt, or use 'clear' to stop hunting.", mention_author=False)
@@ -159,10 +167,19 @@ class ShinyHunt(commands.Cog):
 
         # Format response
         if len(pokemon_to_hunt) == 1:
-            await ctx.reply(f"✅ Now hunting: **{pokemon_to_hunt[0]}**", mention_author=False)
+            response = f"✅ Now hunting: **{pokemon_to_hunt[0]}**"
         else:
             hunt_list = ", ".join(f"**{p}**" for p in pokemon_to_hunt)
-            await ctx.reply(f"✅ Now hunting **{len(pokemon_to_hunt)}** variants: {hunt_list}", mention_author=False)
+            response = f"✅ Now hunting **{len(pokemon_to_hunt)}** variants: {hunt_list}"
+
+        if expansion_notes:
+            note_lines = [
+                f"• \"{typed}\" matched {len(names)} Pokémon: {', '.join(names)}"
+                for typed, names in expansion_notes
+            ]
+            response += "\n\n" + "\n".join(note_lines)
+
+        await ctx.reply(response, mention_author=False)
 
     @staticmethod
     def _build_who_embeds(title: str, user_ids, color=EMBED_COLOR):
