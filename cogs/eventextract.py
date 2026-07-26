@@ -81,9 +81,15 @@ def _parse_other_names(raw: str) -> Dict[str, List[str]]:
         if not m:
             continue
         flag, name = m.group(1), m.group(2).strip()
-        if flag == ENGLISH_FLAG:
-            continue
         other_names.setdefault(flag, []).append(name)
+
+    # English is usually just the primary title name repeated — drop it in
+    # that case. But if there's more than one English line (i.e. an actual
+    # alt/nickname alongside the primary), keep all of them.
+    english = other_names.get(ENGLISH_FLAG)
+    if english is not None and len(english) <= 1:
+        del other_names[ENGLISH_FLAG]
+
     return other_names
 
 
