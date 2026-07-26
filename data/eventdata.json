@@ -2905,6 +2905,14 @@
     "rarity": "Event"
   },
   {
+    "dex_number": 668,
+    "name": "Proud Amsterdammer Pyroar Female",
+    "other_names": {},
+    "is_variant": true,
+    "variant_of": "Pyroar",
+    "rarity": "Event"
+  },
+  {
     "dex_number": 775,
     "name": "Proud Sydneysider Komala",
     "other_names": {},
