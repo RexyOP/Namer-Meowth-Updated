@@ -35,6 +35,8 @@ from discord import app_commands
 from discord.ext import commands
 from config import EMBED_COLOR
 
+NO_MENTIONS = discord.AllowedMentions.none()
+
 
 # ─────────────────────────────────────────────────────────────────────
 # Helper
@@ -117,12 +119,12 @@ class ChannelConfig(commands.Cog):
             value=f"`{p}channel settings` — all configured channels at a glance",
             inline=False,
         )
-        await ctx.reply(embed=embed, mention_author=False)
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @channel_group.error
     async def channel_group_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False)
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ══════════════════════════════════════════════════════════════════
     # Starboard sub-group:  p!channel starboard
@@ -165,7 +167,7 @@ class ChannelConfig(commands.Cog):
         _field("Unbox",      "starboard_unbox_channel_id")
 
         embed.set_footer(text=f"Guild ID: {ctx.guild.id}")
-        await ctx.reply(embed=embed, mention_author=False)
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ── p!channel starboard all ────────────────────────────────────────
 
@@ -183,6 +185,7 @@ class ChannelConfig(commands.Cog):
             await ctx.reply(
                 f"❌ Usage: `{ctx.prefix}channel starboard all #channel` or `none` to clear all.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -201,11 +204,11 @@ class ChannelConfig(commands.Cog):
         if result == "clear":
             for setter in _all_setters:
                 await setter(ctx.guild.id, None)
-            await ctx.reply("✅ All starboard channels have been cleared.", mention_author=False)
+            await ctx.reply("✅ All starboard channels have been cleared.", mention_author=False, allowed_mentions=NO_MENTIONS)
         else:
             for setter in _all_setters:
                 await setter(ctx.guild.id, result.id)
-            await ctx.reply(f"✅ All starboard channels set to {result.mention}", mention_author=False)
+            await ctx.reply(f"✅ All starboard channels set to {result.mention}", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ── Generic starboard channel setter (DRY helper) ──────────────────
 
@@ -215,14 +218,15 @@ class ChannelConfig(commands.Cog):
             await ctx.reply(
                 f"❌ Usage: `{ctx.prefix}channel starboard {label} #channel` or `none` to clear.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
         if result == "clear":
             await setter(ctx.guild.id, None)
-            await ctx.reply(f"✅ {label.title()} starboard channel cleared.", mention_author=False)
+            await ctx.reply(f"✅ {label.title()} starboard channel cleared.", mention_author=False, allowed_mentions=NO_MENTIONS)
         else:
             await setter(ctx.guild.id, result.id)
-            await ctx.reply(f"✅ {label.title()} starboard channel set to {result.mention}", mention_author=False)
+            await ctx.reply(f"✅ {label.title()} starboard channel set to {result.mention}", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ── Individual starboard subcommands ──────────────────────────────
 
@@ -294,9 +298,9 @@ class ChannelConfig(commands.Cog):
     @starboard_milestone_cmd.error
     async def starboard_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False)
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
         elif isinstance(error, commands.BadArgument):
-            await ctx.reply("❌ Invalid channel. Mention a text channel, use its ID, or type `none`.", mention_author=False)
+            await ctx.reply("❌ Invalid channel. Mention a text channel, use its ID, or type `none`.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ══════════════════════════════════════════════════════════════════
     # Global starboard channels (bot owner only)
@@ -313,6 +317,7 @@ class ChannelConfig(commands.Cog):
             f"`{p}channel global-starboard egg #channel`\n"
             f"`{p}channel global-starboard unbox #channel`",
             mention_author=False,
+                allowed_mentions=NO_MENTIONS,
         )
 
     @global_starboard_group.command(name="catch")
@@ -320,30 +325,30 @@ class ChannelConfig(commands.Cog):
     async def global_starboard_catch_cmd(self, ctx, channel: discord.TextChannel = None):
         """Set the global catch starboard channel (bot owner only)."""
         if not channel:
-            await ctx.reply("❌ Please mention a channel or provide a channel ID.", mention_author=False)
+            await ctx.reply("❌ Please mention a channel or provide a channel ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
         await self.db.set_global_starboard_catch_channel(channel.id)
-        await ctx.reply(f"✅ Global catch starboard channel set to {channel.mention}", mention_author=False)
+        await ctx.reply(f"✅ Global catch starboard channel set to {channel.mention}", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @global_starboard_group.command(name="egg")
     @commands.is_owner()
     async def global_starboard_egg_cmd(self, ctx, channel: discord.TextChannel = None):
         """Set the global egg starboard channel (bot owner only)."""
         if not channel:
-            await ctx.reply("❌ Please mention a channel or provide a channel ID.", mention_author=False)
+            await ctx.reply("❌ Please mention a channel or provide a channel ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
         await self.db.set_global_starboard_egg_channel(channel.id)
-        await ctx.reply(f"✅ Global egg starboard channel set to {channel.mention}", mention_author=False)
+        await ctx.reply(f"✅ Global egg starboard channel set to {channel.mention}", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @global_starboard_group.command(name="unbox")
     @commands.is_owner()
     async def global_starboard_unbox_cmd(self, ctx, channel: discord.TextChannel = None):
         """Set the global unbox starboard channel (bot owner only)."""
         if not channel:
-            await ctx.reply("❌ Please mention a channel or provide a channel ID.", mention_author=False)
+            await ctx.reply("❌ Please mention a channel or provide a channel ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
         await self.db.set_global_starboard_unbox_channel(channel.id)
-        await ctx.reply(f"✅ Global unbox starboard channel set to {channel.mention}", mention_author=False)
+        await ctx.reply(f"✅ Global unbox starboard channel set to {channel.mention}", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @global_starboard_group.error
     @global_starboard_catch_cmd.error
@@ -351,9 +356,9 @@ class ChannelConfig(commands.Cog):
     @global_starboard_unbox_cmd.error
     async def global_starboard_error(self, ctx, error):
         if isinstance(error, commands.NotOwner):
-            await ctx.reply("❌ Only the bot owner can use this command.", mention_author=False)
+            await ctx.reply("❌ Only the bot owner can use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
         elif isinstance(error, commands.BadArgument):
-            await ctx.reply("❌ Invalid channel mention or ID.", mention_author=False)
+            await ctx.reply("❌ Invalid channel mention or ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ══════════════════════════════════════════════════════════════════
     # p!channel captcha [#channel]   (Admin only)
@@ -383,14 +388,14 @@ class ChannelConfig(commands.Cog):
                 ),
                 color=EMBED_COLOR,
             )
-        await ctx.reply(embed=embed, mention_author=False)
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @captcha_cmd.error
     async def captcha_cmd_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False)
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
         elif isinstance(error, commands.BadArgument):
-            await ctx.reply("❌ Invalid channel. Mention a text channel or use its ID.", mention_author=False)
+            await ctx.reply("❌ Invalid channel. Mention a text channel or use its ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ══════════════════════════════════════════════════════════════════
     # p!channel lowpred #channel   (bot owner only)
@@ -408,17 +413,18 @@ class ChannelConfig(commands.Cog):
             await ctx.reply(
                 f"❌ Usage: `{ctx.prefix}channel lowpred #channel`",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
         await self.db.set_low_prediction_channel(channel.id)
-        await ctx.reply(f"✅ Low-prediction channel set to {channel.mention}", mention_author=False)
+        await ctx.reply(f"✅ Low-prediction channel set to {channel.mention}", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @lowpred_cmd.error
     async def lowpred_error(self, ctx, error):
         if isinstance(error, commands.NotOwner):
-            await ctx.reply("❌ Only the bot owner can use this command.", mention_author=False)
+            await ctx.reply("❌ Only the bot owner can use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
         elif isinstance(error, commands.BadArgument):
-            await ctx.reply("❌ Invalid channel mention or ID.", mention_author=False)
+            await ctx.reply("❌ Invalid channel mention or ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ══════════════════════════════════════════════════════════════════
     # p!channel secondary #channel   (bot owner only)
@@ -436,17 +442,18 @@ class ChannelConfig(commands.Cog):
             await ctx.reply(
                 f"❌ Usage: `{ctx.prefix}channel secondary #channel`",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
         await self.db.set_secondary_model_channel(channel.id)
-        await ctx.reply(f"✅ Secondary model channel set to {channel.mention}", mention_author=False)
+        await ctx.reply(f"✅ Secondary model channel set to {channel.mention}", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @secondary_cmd.error
     async def secondary_error(self, ctx, error):
         if isinstance(error, commands.NotOwner):
-            await ctx.reply("❌ Only the bot owner can use this command.", mention_author=False)
+            await ctx.reply("❌ Only the bot owner can use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
         elif isinstance(error, commands.BadArgument):
-            await ctx.reply("❌ Invalid channel mention or ID.", mention_author=False)
+            await ctx.reply("❌ Invalid channel mention or ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ══════════════════════════════════════════════════════════════════
     # p!channel settings   (anyone)
@@ -489,7 +496,7 @@ class ChannelConfig(commands.Cog):
         )
 
         embed.set_footer(text=f"Guild ID: {ctx.guild.id} • Use p!channel <subcommand> to configure")
-        await ctx.reply(embed=embed, mention_author=False)
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
 
 async def setup(bot: commands.Bot):
