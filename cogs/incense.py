@@ -5,6 +5,8 @@ import re
 import shlex
 import config
 
+NO_MENTIONS = discord.AllowedMentions.none()
+
 POKETWO_ID = 716390085896962058
 INCENSE_PATTERN = re.compile(
     r"You purchased an Incense for \d+ shards!",
@@ -174,7 +176,7 @@ def incense_control_check_slash():
                     description="❌ You don't have a role that's allowed to use incense commands.\nAsk an admin to run `inc allowedroles add <role>`.",
                     color=config.EMBED_COLOR
                 ),
-                ephemeral=True
+                ephemeral=True, allowed_mentions=NO_MENTIONS
             )
             return False
         return True
@@ -333,7 +335,7 @@ class IncenseListView(discord.ui.View):
     async def _check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
             await interaction.response.send_message(
-                "Only the person who ran this command can interact with this.", ephemeral=True
+                "Only the person who ran this command can interact with this.", ephemeral=True, allowed_mentions=NO_MENTIONS
             )
             return False
         return True
@@ -364,7 +366,7 @@ class IncenseListView(discord.ui.View):
         pages = self.current_pages
         if not pages:
             # Shouldn't happen (button is disabled when empty) but guard anyway
-            await interaction.response.send_message("No channels to show.", ephemeral=True)
+            await interaction.response.send_message("No channels to show.", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         await interaction.response.edit_message(embed=pages[self.current], view=self)
 
@@ -430,14 +432,14 @@ class Incense(commands.Cog):
                 description="❌ You don't have a role that's allowed to use incense commands.\nAsk an admin to run `inc allowedroles add <role>`.",
                 color=config.EMBED_COLOR
             )
-            await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+            await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
             return
         if isinstance(error, commands.MissingRequiredArgument):
             embed = discord.Embed(
                 description=f"❌ Missing required argument: `{error.param.name}`.\nUse `{config.BOT_PREFIX[0]}inc help` to see command usage.",
                 color=config.EMBED_COLOR
             )
-            await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+            await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
             return
         # Re-raise anything else so the global error handler still sees it
         raise error
@@ -486,7 +488,7 @@ class Incense(commands.Cog):
             try:
                 await message.channel.send(
                     f"Incense purchased! Poketwo has been restricted in this channel. "
-                    f"Use `{self._bot_mention()} incense help` to learn about the commands."
+                    f"Use `{self._bot_mention()} incense help` to learn about the commands.", allowed_mentions=NO_MENTIONS
                 )
             except discord.Forbidden:
                 pass
@@ -510,7 +512,7 @@ class Incense(commands.Cog):
             description=f"The incense watcher is now {'**enabled** ✅' if new_val else '**disabled** 🔴'}.",
             color=config.EMBED_COLOR
         )
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, allowed_mentions=NO_MENTIONS)
 
     # ── /inc cat ─────────────────────────────
 
@@ -530,7 +532,7 @@ class Incense(commands.Cog):
                 embed=discord.Embed(
                     description=f"⚠️ **{category.name}** is already being monitored.",
                     color=config.EMBED_COLOR
-                ), ephemeral=True
+                ), ephemeral=True, allowed_mentions=NO_MENTIONS
             )
         cats.append(category.id)
         await _set_categories(self.db, interaction.guild_id, cats)
@@ -539,7 +541,7 @@ class Incense(commands.Cog):
             description=f"✅ Added category **{category.name}** ({ch_count} channel{'s' if ch_count != 1 else ''})",
             color=config.EMBED_COLOR
         )
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, allowed_mentions=NO_MENTIONS)
 
     @cat_group.command(name="remove", description="Stop monitoring a category")
     @app_commands.describe(category="The category to remove")
@@ -551,7 +553,7 @@ class Incense(commands.Cog):
                 embed=discord.Embed(
                     description=f"⚠️ **{category.name}** is not in the monitored list.",
                     color=config.EMBED_COLOR
-                ), ephemeral=True
+                ), ephemeral=True, allowed_mentions=NO_MENTIONS
             )
         cats.remove(category.id)
         await _set_categories(self.db, interaction.guild_id, cats)
@@ -559,7 +561,7 @@ class Incense(commands.Cog):
             description=f"🗑️ Removed **{category.name}** from monitoring.",
             color=config.EMBED_COLOR
         )
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, allowed_mentions=NO_MENTIONS)
 
     @cat_group.command(name="list", description="List all monitored categories with channel counts")
     async def inc_cat_list(self, interaction: discord.Interaction):
@@ -582,7 +584,7 @@ class Incense(commands.Cog):
             embed.set_footer(
                 text=f"{len(cats)} categor{'ies' if len(cats) != 1 else 'y'} · {total_ch} total channels"
             )
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, allowed_mentions=NO_MENTIONS)
 
     # ── /inc pause ───────────────────────────
 
@@ -605,7 +607,7 @@ class Incense(commands.Cog):
                 embed=discord.Embed(
                     description="⏳ Pausing Incenses. This may take some seconds.",
                     color=config.EMBED_COLOR
-                )
+                ), allowed_mentions=NO_MENTIONS
             )
 
             total_synced = 0
@@ -644,7 +646,7 @@ class Incense(commands.Cog):
                 embed=discord.Embed(
                     description=f"⚠️ {channel.mention} is not inside a monitored category.",
                     color=config.EMBED_COLOR
-                ), ephemeral=True
+                ), ephemeral=True, allowed_mentions=NO_MENTIONS
             )
         already = await self._is_paused(channel)
         await self._pause_channel(channel)
@@ -655,7 +657,7 @@ class Incense(commands.Cog):
             ),
             color=config.EMBED_COLOR
         )
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, allowed_mentions=NO_MENTIONS)
 
     # ── /inc resume ──────────────────────────
 
@@ -677,7 +679,7 @@ class Incense(commands.Cog):
                 embed=discord.Embed(
                     description="⏳ Resuming Incenses. This may take some seconds.",
                     color=config.EMBED_COLOR
-                )
+                ), allowed_mentions=NO_MENTIONS
             )
 
             total_synced = 0
@@ -708,14 +710,14 @@ class Incense(commands.Cog):
                 embed=discord.Embed(
                     description=f"⚠️ {channel.mention} is not inside a monitored category.",
                     color=config.EMBED_COLOR
-                ), ephemeral=True
+                ), ephemeral=True, allowed_mentions=NO_MENTIONS
             )
         await self._resume_channel(channel)
         embed = discord.Embed(
             description=f"▶️ Resumed {channel.mention} — synced to category permissions.",
             color=config.EMBED_COLOR
         )
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, allowed_mentions=NO_MENTIONS)
 
     # ── /inc list ────────────────────────────
 
@@ -730,7 +732,7 @@ class Incense(commands.Cog):
                 embed=discord.Embed(
                     description="No categories are being monitored. Use `/inc cat add` first.",
                     color=config.EMBED_COLOR
-                )
+                ), allowed_mentions=NO_MENTIONS
             )
 
         paused_pages, paused_total = _build_list_pages(interaction.guild, cats, paused_ids, True)
@@ -741,7 +743,7 @@ class Incense(commands.Cog):
                 embed=discord.Embed(
                     description="No channels found in monitored categories.",
                     color=config.EMBED_COLOR
-                )
+                ), allowed_mentions=NO_MENTIONS
             )
 
         view = IncenseListView(
@@ -755,7 +757,7 @@ class Incense(commands.Cog):
             view.showing_paused = False
             view._update_buttons()
 
-        await interaction.followup.send(embed=view.current_pages[0], view=view)
+        await interaction.followup.send(embed=view.current_pages[0], view=view, allowed_mentions=NO_MENTIONS)
 
     # ── /inc help ────────────────────────────
 
@@ -833,7 +835,7 @@ class Incense(commands.Cog):
             inline=False
         )
         embed.set_footer(text="Allowed Role required for pause/resume · Manage Server for setup/allowedroles")
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, allowed_mentions=NO_MENTIONS)
 
     # ══════════════════════════════════════════
     #  Prefix commands  (p!inc / p!incense)
@@ -857,7 +859,7 @@ class Incense(commands.Cog):
             description=f"The incense watcher is now {'**enabled** ✅' if new_val else '**disabled** 🔴'}.",
             color=config.EMBED_COLOR
         )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ── cat ──────────────────────────────────
 
@@ -874,7 +876,7 @@ class Incense(commands.Cog):
             ),
             color=config.EMBED_COLOR
         )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @inc_prefix_cat.command(name="add")
     @commands.has_permissions(manage_guild=True)
@@ -894,7 +896,7 @@ class Incense(commands.Cog):
                 ),
                 color=config.EMBED_COLOR
             )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
         names = _parse_category_names(raw)
         cats = await _get_categories(self.db, ctx.guild.id)
 
@@ -927,7 +929,7 @@ class Incense(commands.Cog):
             description="\n\n".join(parts) if parts else "Nothing to add.",
             color=config.EMBED_COLOR
         )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @inc_prefix_cat.command(name="remove")
     @commands.has_permissions(manage_guild=True)
@@ -947,7 +949,7 @@ class Incense(commands.Cog):
                 ),
                 color=config.EMBED_COLOR
             )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
         names = _parse_category_names(raw)
         cats = await _get_categories(self.db, ctx.guild.id)
 
@@ -977,7 +979,7 @@ class Incense(commands.Cog):
             description="\n\n".join(parts) if parts else "Nothing to remove.",
             color=config.EMBED_COLOR
         )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @inc_prefix_cat.command(name="list")
     async def inc_prefix_cat_list(self, ctx: commands.Context):
@@ -1001,7 +1003,7 @@ class Incense(commands.Cog):
             embed.set_footer(
                 text=f"{len(cats)} categor{'ies' if len(cats) != 1 else 'y'} · {total_ch} total channels"
             )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ── allowedroles ─────────────────────────
 
@@ -1021,7 +1023,7 @@ class Incense(commands.Cog):
                 lines.append(f"• {role.mention} (`{rid}`)" if role else f"• *(Unknown — ID {rid})*")
             embed.description = "\n".join(lines)
             embed.set_footer(text=f"{len(allowed)} role{'s' if len(allowed) != 1 else ''} allowed")
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @inc_prefix_allowedroles.command(name="add")
     @commands.has_permissions(manage_guild=True)
@@ -1040,7 +1042,7 @@ class Incense(commands.Cog):
                 ),
                 color=config.EMBED_COLOR
             )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
         # Collect role IDs from mentions and raw IDs
         allowed = await _get_allowed_roles(self.db, ctx.guild.id)
         added, skipped = [], []
@@ -1057,7 +1059,7 @@ class Incense(commands.Cog):
                 description="❌ No valid roles found. Mention a role or provide a role ID.",
                 color=config.EMBED_COLOR
             )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
         for rid in candidates:
             role = ctx.guild.get_role(rid)
@@ -1080,7 +1082,7 @@ class Incense(commands.Cog):
             description="\n\n".join(parts) if parts else "Nothing changed.",
             color=config.EMBED_COLOR
         )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @inc_prefix_allowedroles.command(name="remove")
     @commands.has_permissions(manage_guild=True)
@@ -1105,7 +1107,7 @@ class Incense(commands.Cog):
                 description="❌ No valid roles found. Mention a role or provide a role ID.",
                 color=config.EMBED_COLOR
             )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
         for rid in candidates:
             role = ctx.guild.get_role(rid)
@@ -1127,7 +1129,7 @@ class Incense(commands.Cog):
             description="\n\n".join(parts) if parts else "Nothing changed.",
             color=config.EMBED_COLOR
         )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @inc_prefix_allowedroles.command(name="clear")
     @commands.has_permissions(manage_guild=True)
@@ -1140,7 +1142,7 @@ class Incense(commands.Cog):
             description=f"🗑️ Cleared all **{count}** allowed role{'s' if count != 1 else ''}. Nobody can use pause/resume until new roles are added.",
             color=config.EMBED_COLOR
         )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ── pause  (alias: p) ────────────────────
 
@@ -1164,7 +1166,7 @@ class Incense(commands.Cog):
                     color=config.EMBED_COLOR
                 ),
                 reference=ctx.message,
-                mention_author=False
+                mention_author=False, allowed_mentions=NO_MENTIONS
             )
 
             total_synced = 0
@@ -1207,7 +1209,7 @@ class Incense(commands.Cog):
                 ),
                 color=config.EMBED_COLOR
             )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
         already = await self._is_paused(channel)
         await self._pause_channel(channel)
@@ -1218,7 +1220,7 @@ class Incense(commands.Cog):
             ),
             color=config.EMBED_COLOR
         )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ── resume  (alias: r) ───────────────────
 
@@ -1241,7 +1243,7 @@ class Incense(commands.Cog):
                     color=config.EMBED_COLOR
                 ),
                 reference=ctx.message,
-                mention_author=False
+                mention_author=False, allowed_mentions=NO_MENTIONS
             )
 
             total_synced = 0
@@ -1276,14 +1278,14 @@ class Incense(commands.Cog):
                 ),
                 color=config.EMBED_COLOR
             )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
         await self._resume_channel(channel)
         embed = discord.Embed(
             description=f"▶️ Resumed {channel.mention} — synced to category permissions.",
             color=config.EMBED_COLOR
         )
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ── list ─────────────────────────────────
 
@@ -1298,7 +1300,7 @@ class Incense(commands.Cog):
                 description="No categories are being monitored.",
                 color=config.EMBED_COLOR
             )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
         paused_pages, paused_total = _build_list_pages(ctx.guild, cats, paused_ids, True)
         active_pages, active_total = _build_list_pages(ctx.guild, cats, paused_ids, False)
@@ -1308,7 +1310,7 @@ class Incense(commands.Cog):
                 description="No channels found in monitored categories.",
                 color=config.EMBED_COLOR
             )
-            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
         view = IncenseListView(
             paused_pages=paused_pages,
@@ -1321,7 +1323,7 @@ class Incense(commands.Cog):
             view.showing_paused = False
             view._update_buttons()
 
-        msg = await ctx.send(embed=view.current_pages[0], view=view, reference=ctx.message, mention_author=False)
+        msg = await ctx.send(embed=view.current_pages[0], view=view, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
         view.message = msg
 
     # ── help ─────────────────────────────────
@@ -1394,7 +1396,7 @@ class Incense(commands.Cog):
             inline=False
         )
         embed.set_footer(text="Allowed Role required for pause/resume · Manage Server for setup/allowedroles · Slash: /inc <subcommand>")
-        await ctx.send(embed=embed, reference=ctx.message, mention_author=False)
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
 
 async def setup(bot: commands.Bot):
