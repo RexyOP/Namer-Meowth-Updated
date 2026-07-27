@@ -7,10 +7,12 @@ from discord.ext import commands
 from typing import List, Optional
 from utils import (
     load_pokemon_data,
-    find_pokemon_by_name_flexible,
+    find_all_pokemon_by_name_flexible,
     get_pokemon_with_variants,
 )
 from config import EMBED_COLOR
+
+NO_MENTIONS = discord.AllowedMentions.none()
 
 # Default categories (rare, regional, gigantamax) have moved to default_cats.py.
 # Admins can import them into their server via `p!cat defaults`.
@@ -248,9 +250,15 @@ class Reserve(commands.Cog):
                 else:
                     invalid.append(part)
             else:
-                mon = find_pokemon_by_name_flexible(part, self.pokemon_data)
-                if mon and mon.get("name"):
-                    valid.append(mon["name"])
+                # A typed name might match more than one Pokemon (e.g. two
+                # event mons sharing the same "other name"), so add all
+                # matches, not just the first.
+                matches = find_all_pokemon_by_name_flexible(part, self.pokemon_data)
+                if matches:
+                    for mon in matches:
+                        canonical = mon.get("name")
+                        if canonical and canonical not in valid:
+                            valid.append(canonical)
                 else:
                     invalid.append(part)
 
@@ -337,7 +345,7 @@ class Reserve(commands.Cog):
             inline=False
         )
 
-        await ctx.reply(embed=embed, mention_author=False)
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ------------------------------------------------------------------
     # p!reserve add pokemon <user> <pokemon,...>
@@ -357,6 +365,7 @@ class Reserve(commands.Cog):
             await ctx.reply(
                 "❌ You don't have permission to use reserve commands.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -401,6 +410,7 @@ class Reserve(commands.Cog):
                 f"❌ Could not find that user. Use a @mention or user ID.\n"
                 f"Usage: `{ctx.prefix}r add p @user <pokemon,...>` or `{ctx.prefix}r add p <pokemon,...> @user`",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -409,6 +419,7 @@ class Reserve(commands.Cog):
                 f"❌ Please provide Pokémon names or a category.\n"
                 f"Usage: `{ctx.prefix}r add p @user <pokemon,...>` or `{ctx.prefix}r add p <pokemon,...> @user`",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -418,7 +429,7 @@ class Reserve(commands.Cog):
                 msg = "❌ No valid Pokémon names found."
                 if invalid:
                     msg += f" Invalid: {', '.join(invalid[:10])}"
-                await ctx.reply(msg, mention_author=False)
+                await ctx.reply(msg, mention_author=False, allowed_mentions=NO_MENTIONS)
                 return
 
             await self.db.add_pokemon_to_reserve(user.id, ctx.guild.id, valid)
@@ -430,7 +441,7 @@ class Reserve(commands.Cog):
                 resp += f": {', '.join(valid[:10])} and {len(valid) - 10} more"
             if invalid:
                 resp += f"\n❌ Invalid: {', '.join(invalid[:10])}"
-            await ctx.reply(resp, mention_author=False)
+            await ctx.reply(resp, mention_author=False, allowed_mentions=NO_MENTIONS)
 
         elif subtype in ("cat", "category"):
             # Split by comma to handle multiple categories
@@ -440,7 +451,8 @@ class Reserve(commands.Cog):
                 await ctx.reply(
                     f"❌ Please provide at least one category name.",
                     mention_author=False,
-                )
+                allowed_mentions=NO_MENTIONS,
+            )
                 return
             
             all_pokes = []
@@ -462,7 +474,8 @@ class Reserve(commands.Cog):
                     f"❌ No categories found: {', '.join(not_found)}\n"
                     f"Admins can add built-in categories with `{ctx.prefix}cat defaults`.",
                     mention_author=False,
-                )
+                allowed_mentions=NO_MENTIONS,
+            )
                 return
             
             # Remove duplicates while preserving order
@@ -476,11 +489,12 @@ class Reserve(commands.Cog):
             if not_found:
                 resp += f"\n⚠️ Not found: {', '.join(not_found)}"
             
-            await ctx.reply(resp, mention_author=False)
+            await ctx.reply(resp, mention_author=False, allowed_mentions=NO_MENTIONS)
         else:
             await ctx.reply(
                 f"❌ Unknown subtype `{subtype}`. Use `pokemon` or `cat`.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
 
     @reserve_add.error
@@ -491,11 +505,13 @@ class Reserve(commands.Cog):
                 f"or `{ctx.prefix}r add pokemon|poke|p <pokemon,...> @user`\n"
                 f"Category: `{ctx.prefix}r add cat|category @user <category>`",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
         elif isinstance(error, commands.BadArgument):
             await ctx.reply(
                 "❌ Could not find that user. Use a @mention or user ID.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
 
     # ------------------------------------------------------------------
@@ -515,6 +531,7 @@ class Reserve(commands.Cog):
                 f"(remove from yourself)\n"
                 f"or `{ctx.prefix}r remove pokemon|poke|p <@user> <pokemon,...>` (admin only)",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -542,7 +559,8 @@ class Reserve(commands.Cog):
                         await ctx.reply(
                             "❌ You don't have permission to remove reserves from other users.",
                             mention_author=False,
-                        )
+                allowed_mentions=NO_MENTIONS,
+            )
                         return
                     target_user = potential_user
                     target_pokemon_input = parts[1] if len(parts) > 1 else ""
@@ -554,6 +572,7 @@ class Reserve(commands.Cog):
             await ctx.reply(
                 "❌ Please specify pokemon or category to remove.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -563,7 +582,7 @@ class Reserve(commands.Cog):
                 msg = "❌ No valid Pokémon names found."
                 if invalid:
                     msg += f" Invalid: {', '.join(invalid[:10])}"
-                await ctx.reply(msg, mention_author=False)
+                await ctx.reply(msg, mention_author=False, allowed_mentions=NO_MENTIONS)
                 return
 
             modified = await self.db.remove_pokemon_from_reserve(
@@ -581,7 +600,7 @@ class Reserve(commands.Cog):
                 )
             if invalid:
                 resp += f"\n❌ Invalid: {', '.join(invalid[:10])}"
-            await ctx.reply(resp, mention_author=False)
+            await ctx.reply(resp, mention_author=False, allowed_mentions=NO_MENTIONS)
 
         elif subtype in ("cat", "category"):
             # Split by comma to handle multiple categories
@@ -591,7 +610,8 @@ class Reserve(commands.Cog):
                 await ctx.reply(
                     f"❌ Please provide at least one category name.",
                     mention_author=False,
-                )
+                allowed_mentions=NO_MENTIONS,
+            )
                 return
             
             all_pokes = []
@@ -613,7 +633,8 @@ class Reserve(commands.Cog):
                     f"❌ No categories found: {', '.join(not_found)}\n"
                     f"Admins can add built-in categories with `{ctx.prefix}cat defaults`.",
                     mention_author=False,
-                )
+                allowed_mentions=NO_MENTIONS,
+            )
                 return
             
             # Remove duplicates while preserving order
@@ -627,11 +648,12 @@ class Reserve(commands.Cog):
             if not_found:
                 resp += f"\n⚠️ Not found: {', '.join(not_found)}"
             
-            await ctx.reply(resp, mention_author=False)
+            await ctx.reply(resp, mention_author=False, allowed_mentions=NO_MENTIONS)
         else:
             await ctx.reply(
                 f"❌ Unknown subtype `{subtype}`. Use `pokemon|poke|p` or `cat|category`.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
 
     @reserve_remove.error
@@ -642,11 +664,13 @@ class Reserve(commands.Cog):
                 f"or `{ctx.prefix}r remove pokemon|poke|p <@user> <pokemon,...>` (admin only)\n"
                 f"or `{ctx.prefix}r remove cat|category <category>`",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
         elif isinstance(error, commands.BadArgument):
             await ctx.reply(
                 "❌ Could not find that user. Use a @mention or user ID.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
 
     # ------------------------------------------------------------------
@@ -667,25 +691,29 @@ class Reserve(commands.Cog):
                 await ctx.reply(
                     f"✅ Cleared your reserves in **{ctx.guild.name}**.",
                     mention_author=False,
-                )
+                allowed_mentions=NO_MENTIONS,
+            )
             else:
                 await ctx.reply(
                     f"⚠️ You had no reserves in this server.",
                     mention_author=False,
-                )
+                allowed_mentions=NO_MENTIONS,
+            )
         elif target.lower() == "--all":
             # Admin clears entire server
             if not await self._has_reserve_permission(ctx):
                 await ctx.reply(
                     "❌ You don't have permission to clear server reserves.",
                     mention_author=False,
-                )
+                allowed_mentions=NO_MENTIONS,
+            )
                 return
             
             count = await self.db.clear_all_reserves(ctx.guild.id)
             await ctx.reply(
                 f"✅ Cleared all reserves in **{ctx.guild.name}** ({count} user entries removed).",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
         else:
             # Check if target is the user themselves
@@ -694,7 +722,8 @@ class Reserve(commands.Cog):
                 await ctx.reply(
                     "❌ Invalid user. Use a @mention, user ID, or `--all` for whole server.",
                     mention_author=False,
-                )
+                allowed_mentions=NO_MENTIONS,
+            )
                 return
             uid = int(raw)
             
@@ -705,19 +734,22 @@ class Reserve(commands.Cog):
                     await ctx.reply(
                         f"✅ Cleared your reserves in **{ctx.guild.name}**.",
                         mention_author=False,
-                    )
+                allowed_mentions=NO_MENTIONS,
+            )
                 else:
                     await ctx.reply(
                         f"⚠️ You had no reserves in this server.",
                         mention_author=False,
-                    )
+                allowed_mentions=NO_MENTIONS,
+            )
             else:
                 # User mentioned someone else - need admin permission
                 if not await self._has_reserve_permission(ctx):
                     await ctx.reply(
                         "❌ You don't have permission to clear other users' reserves.",
                         mention_author=False,
-                    )
+                allowed_mentions=NO_MENTIONS,
+            )
                     return
                 
                 cleared = await self.db.clear_user_reserve(uid, ctx.guild.id)
@@ -725,10 +757,11 @@ class Reserve(commands.Cog):
                     await ctx.reply(
                         f"✅ Cleared reserves for <@{uid}> in this server.",
                         mention_author=False,
-                    )
+                allowed_mentions=NO_MENTIONS,
+            )
                 else:
                     await ctx.reply(
-                        f"⚠️ <@{uid}> had no reserves in this server.", mention_author=False
+                        f"⚠️ <@{uid}> had no reserves in this server.", mention_author=False, allowed_mentions=NO_MENTIONS
                     )
 
     # ------------------------------------------------------------------
@@ -754,7 +787,8 @@ class Reserve(commands.Cog):
                 await ctx.reply(
                     "❌ Invalid user. Use a @mention or numeric user ID.",
                     mention_author=False,
-                )
+                allowed_mentions=NO_MENTIONS,
+            )
                 return
             uid = int(raw)
             pokemon_list = await self.db.get_user_reserve(uid, ctx.guild.id)
@@ -762,7 +796,8 @@ class Reserve(commands.Cog):
                 await ctx.reply(
                     f"⚠️ <@{uid}> has no reserves in this server.",
                     mention_author=False,
-                )
+                allowed_mentions=NO_MENTIONS,
+            )
                 return
             # Wrap the pokemon list in a doc structure for build_reserve_list_embeds
             docs = [{"user_id": uid, "pokemon": pokemon_list}]
@@ -771,10 +806,10 @@ class Reserve(commands.Cog):
         pages = build_reserve_list_embeds(guild_name, docs)
 
         if len(pages) == 1:
-            await ctx.reply(embed=pages[0], mention_author=False)
+            await ctx.reply(embed=pages[0], mention_author=False, allowed_mentions=NO_MENTIONS)
         else:
             view = ReserveListView(ctx.author.id, pages)
-            msg = await ctx.reply(embed=pages[0], view=view, mention_author=False)
+            msg = await ctx.reply(embed=pages[0], view=view, mention_author=False, allowed_mentions=NO_MENTIONS)
             view.message = msg
 
     # ------------------------------------------------------------------
@@ -797,6 +832,7 @@ class Reserve(commands.Cog):
             await ctx.reply(
                 "❌ You need administrator permissions to view allowed roles.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -825,7 +861,7 @@ class Reserve(commands.Cog):
             embed.set_footer(
                 text=f"{len(role_ids)} role(s) — these can use all reserve commands"
             )
-        await ctx.reply(embed=embed, mention_author=False)
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @allowed_roles_group.command(name="add")
     @commands.has_permissions(administrator=True)
@@ -836,11 +872,12 @@ class Reserve(commands.Cog):
             await ctx.reply(
                 "❌ Could not find that role. Use @mention or role ID.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
         await self.db.add_reserve_allowed_role(ctx.guild.id, role.id)
         await ctx.reply(
-            f"✅ {role.mention} can now use reserve commands.", mention_author=False
+            f"✅ {role.mention} can now use reserve commands.", mention_author=False, allowed_mentions=NO_MENTIONS
         )
 
     @allowed_roles_group.command(name="remove")
@@ -852,20 +889,22 @@ class Reserve(commands.Cog):
             await ctx.reply(
                 "❌ Could not find that role. Use @mention or role ID.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
         await self.db.remove_reserve_allowed_role(ctx.guild.id, role.id)
         await ctx.reply(
             f"✅ {role.mention} removed from reserve allowed roles.",
             mention_author=False,
-        )
+                allowed_mentions=NO_MENTIONS,
+            )
 
     @allowed_roles_group.command(name="clear")
     @commands.has_permissions(administrator=True)
     async def allowed_roles_clear(self, ctx):
         """Remove all allowed roles from the reserve system for this server."""
         await self.db.clear_reserve_allowed_roles(ctx.guild.id)
-        await ctx.reply("✅ All reserve allowed roles cleared.", mention_author=False)
+        await ctx.reply("✅ All reserve allowed roles cleared.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     async def _resolve_role(self, ctx, role_input: str) -> Optional[discord.Role]:
         """Resolve a role from a mention string or raw ID."""
@@ -890,10 +929,11 @@ class Reserve(commands.Cog):
             await ctx.reply(
                 "❌ You need administrator permissions to manage allowed roles.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
         elif isinstance(error, commands.MissingRequiredArgument):
             await ctx.reply(
-                f"❌ Please provide a role mention or ID.", mention_author=False
+                f"❌ Please provide a role mention or ID.", mention_author=False, allowed_mentions=NO_MENTIONS
             )
 
     # ------------------------------------------------------------------
@@ -904,7 +944,7 @@ class Reserve(commands.Cog):
         if isinstance(error, commands.CommandNotFound):
             return
         await ctx.reply(
-            f"❌ An error occurred: {str(error)[:200]}", mention_author=False
+            f"❌ An error occurred: {str(error)[:200]}", mention_author=False, allowed_mentions=NO_MENTIONS
         )
 
 
