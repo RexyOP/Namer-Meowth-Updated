@@ -235,7 +235,7 @@ class Collection(commands.Cog):
     async def collection_group(self, ctx):
         """Collection management commands"""
         if ctx.invoked_subcommand is None:
-            await ctx.reply("Usage: `p!cl [add/remove/clear/list/raw]`", mention_author=False)
+            await ctx.reply("Usage: `p!cl [add/remove/clear/list/raw]`", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @collection_group.command(name="add")
     async def collection_add(self, ctx, *, pokemon_names: str):
@@ -249,7 +249,7 @@ class Collection(commands.Cog):
         names_list = [name.strip() for name in pokemon_names.split(",") if name.strip()]
 
         if not names_list:
-            await ctx.reply("No valid Pokemon names provided", mention_author=False)
+            await ctx.reply("No valid Pokemon names provided", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         added_pokemon = []
@@ -299,7 +299,7 @@ class Collection(commands.Cog):
                 error_msg += f". Invalid: {', '.join(invalid_pokemon[:10])}"
                 if len(invalid_pokemon) > 10:
                     error_msg += f" and {len(invalid_pokemon) - 10} more..."
-            await ctx.reply(error_msg, mention_author=False)
+            await ctx.reply(error_msg, mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         await self.db.add_pokemon_to_collection(ctx.author.id, ctx.guild.id, added_pokemon)
@@ -350,7 +350,7 @@ class Collection(commands.Cog):
             else:
                 response += f"\n💡 {len(has_forms_hints)} Pokémon in your list have other forms. Use `<name> all` to add all forms."
 
-        await ctx.reply(response, mention_author=False)
+        await ctx.reply(response, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @collection_group.command(name="remove")
     async def collection_remove(self, ctx, *, pokemon_names: str):
@@ -385,15 +385,15 @@ class Collection(commands.Cog):
         # ── 3. Resolve --user → the overlap between your collection and theirs ─
         if target_user_id is not None:
             if target_user_id == ctx.author.id:
-                await ctx.reply("You can't use `--user` with yourself.", mention_author=False)
+                await ctx.reply("You can't use `--user` with yourself.", mention_author=False, allowed_mentions=NO_MENTIONS)
                 return
             other_collection = await self.db.get_user_collection(target_user_id, ctx.guild.id)
             if not other_collection:
                 await ctx.reply(
                     f"<@{target_user_id}> has no Pokémon in their collection for this server, so nothing was removed from yours.",
                     mention_author=False,
-                    allowed_mentions=NO_MENTIONS,
-                )
+                allowed_mentions=NO_MENTIONS,
+            )
                 return
 
             # Only Pokemon that are in BOTH your collection and theirs should
@@ -406,8 +406,8 @@ class Collection(commands.Cog):
                 await ctx.reply(
                     f"You and <@{target_user_id}> have no Pokémon in common, so nothing was removed.",
                     mention_author=False,
-                    allowed_mentions=NO_MENTIONS,
-                )
+                allowed_mentions=NO_MENTIONS,
+            )
                 return
 
             removed_pokemon.extend(common_pokemon)
@@ -460,7 +460,7 @@ class Collection(commands.Cog):
                 parts.append(f"Unknown spawn rates: {', '.join(f'1/{s}' for s in unknown_sr)}")
             if not_found_pokemon:
                 parts.append(f"Invalid names: {', '.join(not_found_pokemon[:30])}")
-            await ctx.reply("\n".join(parts), mention_author=False)
+            await ctx.reply("\n".join(parts), mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         # Deduplicate while preserving order
@@ -524,9 +524,9 @@ class Collection(commands.Cog):
         cleared = await self.db.clear_collection(ctx.author.id, ctx.guild.id)
 
         if cleared:
-            await ctx.reply("✅ Collection cleared successfully", mention_author=False)
+            await ctx.reply("✅ Collection cleared successfully", mention_author=False, allowed_mentions=NO_MENTIONS)
         else:
-            await ctx.reply("Your collection is already empty", mention_author=False)
+            await ctx.reply("Your collection is already empty", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @collection_group.command(name="list")
     async def collection_list(self, ctx):
@@ -540,12 +540,12 @@ class Collection(commands.Cog):
 
             if total_pages > 1:
                 view = CollectionPaginationView(ctx.author.id, ctx.guild.id, 1, total_pages, self)
-                msg = await ctx.reply(embed=embed, view=view, mention_author=False)
+                msg = await ctx.reply(embed=embed, view=view, mention_author=False, allowed_mentions=NO_MENTIONS)
                 view.message = msg
             else:
-                await ctx.reply(embed=embed, mention_author=False)
+                await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
         else:
-            await ctx.reply(embed=embed, mention_author=False)
+            await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     def _format_collection_by_sr(
         self, collection: List[str], sr_filter: List[int] = None
@@ -638,7 +638,7 @@ class Collection(commands.Cog):
         collection = await self.db.get_user_collection(ctx.author.id, ctx.guild.id)
 
         if not collection:
-            await ctx.reply("Your collection is empty!", mention_author=False)
+            await ctx.reply("Your collection is empty!", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         # Parse --sr flags
@@ -649,7 +649,7 @@ class Collection(commands.Cog):
         if unknown_srs:
             await ctx.reply(
                 f"❌ Unknown spawn rate(s): {', '.join(f'1/{s}' for s in unknown_srs)}",
-                mention_author=False
+                mention_author=False, allowed_mentions=NO_MENTIONS
             )
             return
 
@@ -661,10 +661,10 @@ class Collection(commands.Cog):
                 sr_label = ", ".join(f"1/{s}" for s in sr_filter)
                 await ctx.reply(
                     f"You have no Pokémon with spawn rate {sr_label} in your collection.",
-                    mention_author=False
+                    mention_author=False, allowed_mentions=NO_MENTIONS
                 )
             else:
-                await ctx.reply("Your collection is empty!", mention_author=False)
+                await ctx.reply("Your collection is empty!", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         # Title / header reflect filter state
@@ -690,10 +690,10 @@ class Collection(commands.Cog):
                 description=f"{header}\n{pages[0]}",
                 color=EMBED_COLOR
             )
-            await ctx.reply(embed=embed, mention_author=False)
+            await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
         else:
             view = RawPaginationView(ctx.author.id, pages, title, header)
-            msg = await ctx.reply(embed=view.build_embed(1), view=view, mention_author=False)
+            msg = await ctx.reply(embed=view.build_embed(1), view=view, mention_author=False, allowed_mentions=NO_MENTIONS)
             view.message = msg
 
     @staticmethod
@@ -750,7 +750,7 @@ class Collection(commands.Cog):
         pokemon = find_pokemon_by_name_flexible(pokemon_name, self.pokemon_data)
 
         if not pokemon or not pokemon.get('name'):
-            await ctx.reply(f"❌ Invalid Pokemon name: {pokemon_name}", mention_author=False)
+            await ctx.reply(f"❌ Invalid Pokemon name: {pokemon_name}", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         resolved_name = pokemon['name']
@@ -759,7 +759,7 @@ class Collection(commands.Cog):
         user_ids = await self.db.get_collectors_for_pokemon(ctx.guild.id, [resolved_name], afk_users)
 
         if not user_ids:
-            await ctx.reply(f"No one in this server is collecting **{resolved_name}**.", mention_author=False)
+            await ctx.reply(f"No one in this server is collecting **{resolved_name}**.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         embeds = self._build_who_embeds(f"📦 Collectors of {resolved_name}", user_ids)
