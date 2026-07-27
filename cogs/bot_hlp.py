@@ -4,6 +4,8 @@ from discord import app_commands
 from discord.ext import commands
 from config import EMBED_COLOR, BOT_PREFIX
 
+NO_MENTIONS = discord.AllowedMentions.none()
+
 class Help(commands.Cog):
     """Help and information commandss"""
 
@@ -14,7 +16,7 @@ class Help(commands.Cog):
     async def help_command(self, ctx, category: str = None):
         """Show help information
 
-        Categories: collection, category, hunt, pings, settings, prediction, starboard, helpful, eventextract, incense, captcha, reserve, channels, listgen, owner, all
+        Categories: collection, category, hunt, pings, settings, roles, prediction, starboard, helpful, eventextract, incense, captcha, reserve, channels, listgen, owner, all
         """
         prefix = BOT_PREFIX[0]
         is_owner = await self.bot.is_owner(ctx.author)
@@ -44,7 +46,7 @@ class Help(commands.Cog):
             embed.add_field(name="ℹ️ About",            value=f"`{prefix}about` — Bot information and stats",                             inline=False)
             embed.add_field(name="🏓 Ping",             value=f"`{prefix}ping` — Check bot latency",                                      inline=False)
             embed.set_footer(text=f"Bot Prefix: {', '.join(BOT_PREFIX)}")
-            await ctx.reply(embed=embed, mention_author=False)
+            await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         category = category.lower()
@@ -584,7 +586,7 @@ class Help(commands.Cog):
         # ── Owner ─────────────────────────────────────────────────────
         elif category in ["owner", "admin", "botowner"]:
             if not is_owner:
-                await ctx.reply("❌ This category is only available to the bot owner.", mention_author=False)
+                await ctx.reply("❌ This category is only available to the bot owner.", mention_author=False, allowed_mentions=NO_MENTIONS)
                 return
 
             embed = discord.Embed(
@@ -964,11 +966,12 @@ class Help(commands.Cog):
                 f"{'`owner`, ' if is_owner else ''}`all`\n"
                 f"Use `{prefix}help` to see the main help menu.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
         embed.set_footer(text=f"Bot Prefix: {', '.join(BOT_PREFIX)}")
-        await ctx.reply(embed=embed, mention_author=False)
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @commands.command(name="about")
     async def about_command(self, ctx):
@@ -1020,7 +1023,7 @@ class Help(commands.Cog):
             inline=False,
         )
         embed.set_footer(text="Made with ❤️ for the Poketwo community")
-        await ctx.reply(embed=embed, mention_author=False)
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @commands.command(name="ping", aliases=["latency", "pong"])
     async def ping_command(self, ctx):
@@ -1028,7 +1031,7 @@ class Help(commands.Cog):
         import time
         api_latency = round(self.bot.latency * 1000)
         start = time.perf_counter()
-        message = await ctx.reply("🏓 Pinging...", mention_author=False)
+        message = await ctx.reply("🏓 Pinging...", mention_author=False, allowed_mentions=NO_MENTIONS)
         end = time.perf_counter()
         response_time = round((end - start) * 1000)
 
