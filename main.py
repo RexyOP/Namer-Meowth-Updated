@@ -12,6 +12,8 @@ from database import Database
 from predict import Prediction
 from config import TOKEN, BOT_PREFIX
 
+NO_MENTIONS = discord.AllowedMentions.none()
+
 # Custom prefix function for case-insensitive prefixes
 def get_prefix(bot, message):
     content_lower = message.content.lower()
@@ -221,31 +223,31 @@ async def on_command_error(ctx, error):
         return
 
     if isinstance(error, commands.CommandOnCooldown):
-        await ctx.reply(f"⏳ This command is on cooldown. Try again in {error.retry_after:.1f}s", mention_author=False)
+        await ctx.reply(f"⏳ This command is on cooldown. Try again in {error.retry_after:.1f}s", mention_author=False, allowed_mentions=NO_MENTIONS)
         return
 
     if isinstance(error, commands.MissingPermissions):
-        await ctx.reply("❌ You don't have permission to use this command.", mention_author=False)
+        await ctx.reply("❌ You don't have permission to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
         return
 
     if isinstance(error, commands.BotMissingPermissions):
-        await ctx.reply("❌ I don't have the necessary permissions to execute this command.", mention_author=False)
+        await ctx.reply("❌ I don't have the necessary permissions to execute this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
         return
 
     if isinstance(error, commands.MissingRequiredArgument):
-        await ctx.reply(f"❌ Missing required argument: `{error.param.name}`\nUse `m!help` for command usage.", mention_author=False)
+        await ctx.reply(f"❌ Missing required argument: `{error.param.name}`\nUse `m!help` for command usage.", mention_author=False, allowed_mentions=NO_MENTIONS)
         return
 
     if isinstance(error, commands.BadArgument):
-        await ctx.reply(f"❌ Invalid argument provided.\nUse `m!help` for command usage.", mention_author=False)
+        await ctx.reply(f"❌ Invalid argument provided.\nUse `m!help` for command usage.", mention_author=False, allowed_mentions=NO_MENTIONS)
         return
 
     if isinstance(error, commands.NotOwner):
-        await ctx.reply("❌ This command can only be used by the bot owner.", mention_author=False)
+        await ctx.reply("❌ This command can only be used by the bot owner.", mention_author=False, allowed_mentions=NO_MENTIONS)
         return
 
     if isinstance(error, commands.NoPrivateMessage):
-        await ctx.reply("❌ This command can't be used in DMs. Please use it in a server.", mention_author=False)
+        await ctx.reply("❌ This command can't be used in DMs. Please use it in a server.", mention_author=False, allowed_mentions=NO_MENTIONS)
         return
 
     if isinstance(error, commands.CheckFailure):
@@ -253,7 +255,7 @@ async def on_command_error(ctx, error):
         return
 
     print(f"Unexpected error in command {ctx.command}: {error}")
-    await ctx.reply("❌ An unexpected error occurred. Please try again later.", mention_author=False)
+    await ctx.reply("❌ An unexpected error occurred. Please try again later.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
 
 # ============================================================================
@@ -301,10 +303,10 @@ async def memcheck(ctx):
             embed.color = discord.Color.orange()
             embed.add_field(name="⚠️ WARNING", value="Memory usage is elevated", inline=False)
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, allowed_mentions=NO_MENTIONS)
         
     except Exception as e:
-        await ctx.send(f"❌ Error: {e}")
+        await ctx.send(f"❌ Error: {e}", allowed_mentions=NO_MENTIONS)
 
 
 async def cleanup():
