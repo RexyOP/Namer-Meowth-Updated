@@ -12,6 +12,8 @@ from typing import Optional, Dict
 from utils import find_pokemon_by_name_flexible, load_pokemon_data, normalize_pokemon_name
 from config import EMBED_COLOR
 
+NO_MENTIONS = discord.AllowedMentions.none()
+
 # ------------------------------------------------------------------ #
 #  Spawn rate data                                                     #
 # ------------------------------------------------------------------ #
@@ -620,7 +622,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
         try:
             spawn_data = await fetch_spawn_rates(session=self.bot.http_session)
         except Exception as e:
-            await interaction.followup.send(f"❌ Failed to fetch spawn rate data: `{e}`")
+            await interaction.followup.send(f"❌ Failed to fetch spawn rate data: `{e}`", allowed_mentions=NO_MENTIONS)
             return
 
         entries = find_spawn_rate_family(canonical_name, spawn_data)
@@ -630,18 +632,18 @@ class PokeTools(commands.Cog, name="PokeTools"):
 
         if not entries:
             await interaction.followup.send(
-                f"❌ No spawn rate data found for **{canonical_name}**. It may not spawn in the wild."
+                f"❌ No spawn rate data found for **{canonical_name}**. It may not spawn in the wild.", allowed_mentions=NO_MENTIONS
             )
             return
 
         embed = _build_spawnrate_embed(entries, canonical_name, pokemon.strip())
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, allowed_mentions=NO_MENTIONS)
 
     @commands.command(name="spawnrate", aliases=["sr"])
     async def spawnrate_prefix(self, ctx: commands.Context, *, pokemon_name: str = None):
         """Show spawn rates for a Pokémon and all its regional forms. Usage: p!sr <pokemon>"""
         if not pokemon_name:
-            await ctx.send("Please provide a Pokémon name. Example: `p!sr meowth`")
+            await ctx.send("Please provide a Pokémon name. Example: `p!sr meowth`", allowed_mentions=NO_MENTIONS)
             return
 
         async with ctx.typing():
@@ -651,7 +653,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
             try:
                 spawn_data = await fetch_spawn_rates(session=self.bot.http_session)
             except Exception as e:
-                await ctx.send(f"❌ Failed to fetch spawn rate data: `{e}`\nPlease try again later.")
+                await ctx.send(f"❌ Failed to fetch spawn rate data: `{e}`\nPlease try again later.", allowed_mentions=NO_MENTIONS)
                 return
 
             entries = find_spawn_rate_family(canonical_name, spawn_data)
@@ -661,12 +663,12 @@ class PokeTools(commands.Cog, name="PokeTools"):
 
             if not entries:
                 await ctx.send(
-                    f"❌ No spawn rate data found for **{canonical_name}**. It may not spawn in the wild."
+                    f"❌ No spawn rate data found for **{canonical_name}**. It may not spawn in the wild.", allowed_mentions=NO_MENTIONS
                 )
                 return
 
             embed = _build_spawnrate_embed(entries, canonical_name, pokemon_name.strip())
-            await ctx.send(embed=embed)
+            await ctx.send(embed=embed, allowed_mentions=NO_MENTIONS)
 
     # ================================================================ #
     #  Shiny rate                                                        #
@@ -684,14 +686,14 @@ class PokeTools(commands.Cog, name="PokeTools"):
         target: Optional[float] = None,
     ):
         if chain is not None and chain < 0:
-            await interaction.response.send_message("❌ Chain cannot be negative.", ephemeral=True)
+            await interaction.response.send_message("❌ Chain cannot be negative.", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         if target is not None and not (0 < target < 100):
-            await interaction.response.send_message("❌ Target must be between 0 and 100.", ephemeral=True)
+            await interaction.response.send_message("❌ Target must be between 0 and 100.", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
 
         if chain is None and target is None:
-            await interaction.response.send_message(embed=_shiny_usage_embed())
+            await interaction.response.send_message(embed=_shiny_usage_embed(), allowed_mentions=NO_MENTIONS)
             return
 
         embeds = []
@@ -700,7 +702,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
         if target is not None:
             embeds.append(_build_chain_target_embed(target))
 
-        await interaction.response.send_message(embeds=embeds)
+        await interaction.response.send_message(embeds=embeds, allowed_mentions=NO_MENTIONS)
 
     @commands.command(name="shinyrate", aliases=["shr"])
     async def shinyrate_prefix(self, ctx: commands.Context, *, args: str = None):
@@ -709,7 +711,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
         Usage: p!shr [chain] [target%]
         """
         if not args:
-            await ctx.send(embed=_shiny_usage_embed())
+            await ctx.send(embed=_shiny_usage_embed(), allowed_mentions=NO_MENTIONS)
             return
 
         async with ctx.typing():
@@ -738,7 +740,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
                         errors.append(f"`{token}` is not a valid chain number.")
 
             if errors:
-                await ctx.send("❌ " + "\n❌ ".join(errors))
+                await ctx.send("❌ " + "\n❌ ".join(errors), allowed_mentions=NO_MENTIONS)
                 return
 
             embeds = []
@@ -750,7 +752,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
             if not embeds:
                 embeds.append(_shiny_usage_embed())
 
-            await ctx.send(embeds=embeds)
+            await ctx.send(embeds=embeds, allowed_mentions=NO_MENTIONS)
 
     # ================================================================ #
     #  Time difference                                                   #
@@ -822,32 +824,32 @@ class PokeTools(commands.Cog, name="PokeTools"):
             try:
                 id1 = int(message_id)
             except ValueError:
-                await interaction.followup.send("❌ `message_id` must be a valid integer ID.")
+                await interaction.followup.send("❌ `message_id` must be a valid integer ID.", allowed_mentions=NO_MENTIONS)
                 return
         if message_id2 is not None:
             try:
                 id2 = int(message_id2)
             except ValueError:
-                await interaction.followup.send("❌ `message_id2` must be a valid integer ID.")
+                await interaction.followup.send("❌ `message_id2` must be a valid integer ID.", allowed_mentions=NO_MENTIONS)
                 return
 
         msg_a, msg_b, error, snowflake_ids, single_id = await self._resolve_pair(interaction.channel, id1, id2, reply_ref=None)
         if error:
-            await interaction.followup.send(error)
+            await interaction.followup.send(error, allowed_mentions=NO_MENTIONS)
             return
 
         # Two IDs — show time difference only
         if snowflake_ids:
-            await interaction.followup.send(embed=_build_timediff_embed_snowflake(*snowflake_ids))
+            await interaction.followup.send(embed=_build_timediff_embed_snowflake(*snowflake_ids), allowed_mentions=NO_MENTIONS)
             return
 
         # Single ID — show just the date
         if single_id is not None:
-            await interaction.followup.send(embed=_build_single_message_date_embed(single_id))
+            await interaction.followup.send(embed=_build_single_message_date_embed(single_id), allowed_mentions=NO_MENTIONS)
             return
 
         # Reply mode — show full details
-        await interaction.followup.send(embed=_build_timediff_embed(msg_a, msg_b))
+        await interaction.followup.send(embed=_build_timediff_embed(msg_a, msg_b), allowed_mentions=NO_MENTIONS)
 
     @commands.command(name="timedifference", aliases=["timediff", "td"])
     async def timedifference_prefix(
@@ -871,21 +873,21 @@ class PokeTools(commands.Cog, name="PokeTools"):
             msg_a, msg_b, error, snowflake_ids, single_id = await self._resolve_pair(ctx.channel, id1, id2, reply_ref)
             
             if error:
-                await ctx.send(error)
+                await ctx.send(error, allowed_mentions=NO_MENTIONS)
                 return
 
             # Two IDs — show time difference only (Snowflake math, instant)
             if snowflake_ids:
-                await ctx.send(embed=_build_timediff_embed_snowflake(*snowflake_ids))
+                await ctx.send(embed=_build_timediff_embed_snowflake(*snowflake_ids), allowed_mentions=NO_MENTIONS)
                 return
 
             # Single ID — show just the date
             if single_id is not None:
-                await ctx.send(embed=_build_single_message_date_embed(single_id))
+                await ctx.send(embed=_build_single_message_date_embed(single_id), allowed_mentions=NO_MENTIONS)
                 return
 
             # Reply mode — show full details with author, jump link, etc.
-            await ctx.send(embed=_build_timediff_embed(msg_a, msg_b))
+            await ctx.send(embed=_build_timediff_embed(msg_a, msg_b), allowed_mentions=NO_MENTIONS)
 
     # ================================================================ #
     #  Pokétwo caught date (ObjectID to timestamp)                       #
@@ -934,16 +936,16 @@ class PokeTools(commands.Cog, name="PokeTools"):
 
         oid, error = self._resolve_date_target(object_id, None)
         if error:
-            await interaction.followup.send(error)
+            await interaction.followup.send(error, allowed_mentions=NO_MENTIONS)
             return
 
         try:
             dt = _objectid_to_datetime(oid)
         except (ValueError, OverflowError) as e:
-            await interaction.followup.send(f"❌ Invalid ObjectID `{oid}`: {e}")
+            await interaction.followup.send(f"❌ Invalid ObjectID `{oid}`: {e}", allowed_mentions=NO_MENTIONS)
             return
 
-        await interaction.followup.send(_date_response_text(dt))
+        await interaction.followup.send(_date_response_text(dt), allowed_mentions=NO_MENTIONS)
 
     @commands.command(name="date", aliases=["caught", "catchdate"])
     async def date_prefix(self, ctx: commands.Context, object_id: Optional[str] = None):
@@ -963,16 +965,16 @@ class PokeTools(commands.Cog, name="PokeTools"):
 
             oid, error = self._resolve_date_target(object_id, replied_msg)
             if error:
-                await ctx.send(error)
+                await ctx.send(error, allowed_mentions=NO_MENTIONS)
                 return
 
             try:
                 dt = _objectid_to_datetime(oid)
             except (ValueError, OverflowError) as e:
-                await ctx.send(f"❌ Invalid ObjectID `{oid}`: {e}")
+                await ctx.send(f"❌ Invalid ObjectID `{oid}`: {e}", allowed_mentions=NO_MENTIONS)
                 return
 
-            await ctx.send(_date_response_text(dt))
+            await ctx.send(_date_response_text(dt), allowed_mentions=NO_MENTIONS)
 
     # ================================================================ #
     #  Extract IDs                                                       #
@@ -1012,20 +1014,20 @@ class PokeTools(commands.Cog, name="PokeTools"):
         try:
             mid = int(message_id)
         except ValueError:
-            await interaction.followup.send("❌ `message_id` must be a valid integer ID.")
+            await interaction.followup.send("❌ `message_id` must be a valid integer ID.", allowed_mentions=NO_MENTIONS)
             return
 
         msg = await _resolve_message(interaction.channel, mid)
         if msg is None:
-            await interaction.followup.send(f"❌ Could not find message `{mid}` in this channel.")
+            await interaction.followup.send(f"❌ Could not find message `{mid}` in this channel.", allowed_mentions=NO_MENTIONS)
             return
 
         ids = self._extract_ids_from_embed(msg)
         if not ids:
-            await interaction.followup.send("❌ No Pokétwo IDs found in that message's embeds.")
+            await interaction.followup.send("❌ No Pokétwo IDs found in that message's embeds.", allowed_mentions=NO_MENTIONS)
             return
 
-        await interaction.followup.send(" ".join(ids))
+        await interaction.followup.send(" ".join(ids), allowed_mentions=NO_MENTIONS)
 
     @commands.command(name="extractids", aliases=["extract", "eids"])
     async def extractids_prefix(self, ctx: commands.Context, message_id: Optional[int] = None):
@@ -1043,27 +1045,27 @@ class PokeTools(commands.Cog, name="PokeTools"):
             if message_id is not None:
                 msg = await _resolve_message(ctx.channel, message_id)
                 if msg is None:
-                    await ctx.send(f"❌ Could not find message `{message_id}` in this channel.")
+                    await ctx.send(f"❌ Could not find message `{message_id}` in this channel.", allowed_mentions=NO_MENTIONS)
                     return
             elif ctx.message.reference and ctx.message.reference.message_id:
                 msg = await _resolve_message(ctx.channel, ctx.message.reference.message_id)
                 if msg is None:
-                    await ctx.send("❌ Could not fetch the replied-to message.")
+                    await ctx.send("❌ Could not fetch the replied-to message.", allowed_mentions=NO_MENTIONS)
                     return
             else:
                 await ctx.send(
                     "❌ Usage:\n"
                     "• Reply to a Pokétwo embed with `p!extractids`\n"
-                    "• Or provide the message ID: `p!extractids <id>`"
+                    "• Or provide the message ID: `p!extractids <id>`", allowed_mentions=NO_MENTIONS
                 )
                 return
 
             ids = self._extract_ids_from_embed(msg)
             if not ids:
-                await ctx.send("❌ No Pokétwo IDs found in that message's embeds.")
+                await ctx.send("❌ No Pokétwo IDs found in that message's embeds.", allowed_mentions=NO_MENTIONS)
                 return
 
-            await ctx.send(" ".join(ids))
+            await ctx.send(" ".join(ids), allowed_mentions=NO_MENTIONS)
 
     # ================================================================ #
     #  Color converter                                                   #
@@ -1087,13 +1089,13 @@ class PokeTools(commands.Cog, name="PokeTools"):
                 "❌ Invalid color format. Try:\n"
                 "• Hex: `#FF0000` or `FF0000`\n"
                 "• RGB: `255, 0, 0` or `rgb(255, 0, 0)`\n"
-                "• Name: `red`, `blue`, `green`, etc."
+                "• Name: `red`, `blue`, `green`, etc.", allowed_mentions=NO_MENTIONS
             )
             return
 
         hex_color = _rgb_to_hex(*rgb)
         embed = _build_color_embed(hex_color, rgb)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, allowed_mentions=NO_MENTIONS)
 
     @commands.command(name="color", aliases=["colour", "c"])
     async def color_prefix(self, ctx: commands.Context, *, color_value: str = None):
@@ -1116,7 +1118,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
                 "❌ Please provide a color. Examples:\n"
                 "`p!color #FF0000`\n"
                 "`p!color 255, 0, 0`\n"
-                "`p!color red`"
+                "`p!color red`", allowed_mentions=NO_MENTIONS
             )
             return
 
@@ -1126,13 +1128,13 @@ class PokeTools(commands.Cog, name="PokeTools"):
                 "❌ Invalid color format. Try:\n"
                 "• Hex: `#FF0000` or `FF0000`\n"
                 "• RGB: `255, 0, 0` or `rgb(255, 0, 0)`\n"
-                "• Name: `red`, `blue`, `green`, etc."
+                "• Name: `red`, `blue`, `green`, etc.", allowed_mentions=NO_MENTIONS
             )
             return
 
         hex_color = _rgb_to_hex(*rgb)
         embed = _build_color_embed(hex_color, rgb)
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, allowed_mentions=NO_MENTIONS)
 
     # ================================================================ #
     #  Owner utilities                                                   #
@@ -1148,13 +1150,13 @@ class PokeTools(commands.Cog, name="PokeTools"):
                 data = await fetch_spawn_rates(session=self.bot.http_session, force=True)
                 new_count = len(data)
             except Exception as e:
-                await ctx.send(f"❌ Failed to reload spawn rate data: `{e}`")
+                await ctx.send(f"❌ Failed to reload spawn rate data: `{e}`", allowed_mentions=NO_MENTIONS)
                 return
 
         embed = discord.Embed(title="✅ Spawn Rate Data Reloaded", color=EMBED_COLOR)
         embed.add_field(name="Entries before", value=str(old_count), inline=True)
         embed.add_field(name="Entries now",    value=str(new_count), inline=True)
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, allowed_mentions=NO_MENTIONS)
 
 
 @app_commands.context_menu(name="Get Caught Date")
@@ -1168,16 +1170,17 @@ async def date_context_menu(interaction: discord.Interaction, message: discord.M
             "❌ This message has no Pokétwo ObjectID in its embed footer.\n"
             "Make sure you right-click a Pokétwo `p!info` / `p!pokemon` embed.",
             ephemeral=True,
+                allowed_mentions=NO_MENTIONS,
         )
         return
 
     try:
         dt = _objectid_to_datetime(oid)
     except (ValueError, OverflowError) as e:
-        await interaction.followup.send(f"❌ Invalid ObjectID `{oid}`: {e}")
+        await interaction.followup.send(f"❌ Invalid ObjectID `{oid}`: {e}", allowed_mentions=NO_MENTIONS)
         return
 
-    await interaction.followup.send(_date_response_text(dt))
+    await interaction.followup.send(_date_response_text(dt), allowed_mentions=NO_MENTIONS)
 
 
 @app_commands.context_menu(name="Extract IDs")
@@ -1190,10 +1193,11 @@ async def extractids_context_menu(interaction: discord.Interaction, message: dis
         await interaction.followup.send(
             "❌ No Pokétwo IDs found in that message's embeds.",
             ephemeral=True,
+                allowed_mentions=NO_MENTIONS,
         )
         return
 
-    await interaction.followup.send(" ".join(ids))
+    await interaction.followup.send(" ".join(ids), allowed_mentions=NO_MENTIONS)
 
 
 async def setup(bot: commands.Bot):
