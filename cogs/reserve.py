@@ -1,6 +1,7 @@
 """Reserve system — server-specific Pokémon reservation for admins and allowed roless."""
 
 import math
+import re
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -279,6 +280,43 @@ class Reserve(commands.Cog):
             return cat.get("pokemon", []), f"server category **{category_key}**"
         return [], ""
 
+    async def _extract_user_and_rest(self, text: str):
+        """
+        Look for a user mention or raw ID at the very START or the very END
+        of `text` (the two supported orderings: '@user <pokemon,...>' and
+        '<pokemon,...> @user'). A mention/ID anywhere in the *middle* is left
+        alone and treated as part of the pokemon/category text.
+
+        Returns (user, remainder) if a mention was found and resolved to a
+        real user, else (None, text) with `text` unchanged — meaning no
+        mention was present (or it didn't resolve), so the remainder is
+        the whole original string.
+        """
+        text = text.strip()
+        mention_token = re.compile(r"<@!?(\d+)>")
+
+        async def resolve(token: str):
+            m = mention_token.match(token)
+            uid = int(m.group(1)) if m else int(token)
+            try:
+                return await self.bot.fetch_user(uid)
+            except Exception:
+                return None
+
+        start_match = re.match(r"^(<@!?\d+>|\d{17,20})\s+([\s\S]+)$", text)
+        if start_match:
+            user = await resolve(start_match.group(1))
+            if user is not None:
+                return user, start_match.group(2).strip()
+
+        end_match = re.match(r"^([\s\S]+?)\s+(<@!?\d+>|\d{17,20})$", text)
+        if end_match:
+            user = await resolve(end_match.group(2))
+            if user is not None:
+                return user, end_match.group(1).strip()
+
+        return None, text
+
     # ------------------------------------------------------------------
     # Main group
     # ------------------------------------------------------------------
@@ -375,35 +413,7 @@ class Reserve(commands.Cog):
         # Supports both:
         #   @user <pokemon,...>   (user first)
         #   <pokemon,...> @user   (user last)
-        import re
-        mention_pattern = re.compile(r"<@!?(\d+)>")
-
-        rest = rest.strip()
-        user = None
-        pokemon_input = None
-
-        # Check if user mention/ID is at the START
-        # Match: <@id> or bare numeric ID at the very beginning
-        start_mention = re.match(r"^(<@!?\d+>|\d{17,20})\s+([\s\S]+)$", rest)
-        # Check if user mention is at the END
-        end_mention = re.match(r"^([\s\S]+?)\s+(<@!?\d+>|\d{17,20})$", rest)
-
-        async def resolve_user(token: str):
-            m = mention_pattern.match(token)
-            uid = int(m.group(1)) if m else int(token)
-            try:
-                return await self.bot.fetch_user(uid)
-            except Exception:
-                return None
-
-        if start_mention:
-            user_token = start_mention.group(1)
-            pokemon_input = start_mention.group(2).strip()
-            user = await resolve_user(user_token)
-        elif end_mention:
-            pokemon_input = end_mention.group(1).strip()
-            user_token = end_mention.group(2)
-            user = await resolve_user(user_token)
+        user, pokemon_input = await self._extract_user_and_rest(rest)
 
         if user is None:
             await ctx.reply(
@@ -537,36 +547,23 @@ class Reserve(commands.Cog):
 
         subtype = subtype.lower()
 
-        # Try to parse if there's a user mention in pokemon_input
-        target_user = ctx.author  # Default to command author
-        target_pokemon_input = pokemon_input
-        
-        # Check if first part of pokemon_input is a user mention or ID
-        parts = pokemon_input.split(None, 1)  # Split on first space
-        first_part = parts[0]
-        
-        # Check if it looks like a user mention or ID
-        if first_part.startswith("<@") or (first_part.lstrip("<@!>").rstrip(">").isdigit()):
-            # Might be a user mention/ID
-            raw_user = first_part.strip("<@!>")
-            if raw_user.isdigit():
-                potential_uid = int(raw_user)
-                # Check if this is a valid user in the guild
-                try:
-                    potential_user = await ctx.bot.fetch_user(potential_uid)
-                    # Admin check for removing from other users
-                    if not await self._has_reserve_permission(ctx):
-                        await ctx.reply(
-                            "❌ You don't have permission to remove reserves from other users.",
-                            mention_author=False,
-                allowed_mentions=NO_MENTIONS,
-            )
-                        return
-                    target_user = potential_user
-                    target_pokemon_input = parts[1] if len(parts) > 1 else ""
-                except:
-                    # Not a valid user, treat as pokemon name
-                    pass
+        # Try to parse if there's a user mention/ID at the start or end of
+        # pokemon_input (supports both '@user rare' and 'rare @user').
+        mentioned_user, target_pokemon_input = await self._extract_user_and_rest(pokemon_input)
+
+        if mentioned_user is not None:
+            # Admin check for removing from other users (mentioning yourself
+            # is always allowed, same as removing without any mention).
+            if mentioned_user.id != ctx.author.id and not await self._has_reserve_permission(ctx):
+                await ctx.reply(
+                    "❌ You don't have permission to remove reserves from other users.",
+                    mention_author=False,
+                    allowed_mentions=NO_MENTIONS,
+                )
+                return
+            target_user = mentioned_user
+        else:
+            target_user = ctx.author
 
         if not target_pokemon_input.strip():
             await ctx.reply(
