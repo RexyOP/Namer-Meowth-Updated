@@ -5,6 +5,8 @@ from discord import app_commands
 from discord.ext import commands
 from config import EMBED_COLOR, Emojis
 
+NO_MENTIONS = discord.AllowedMentions.none()
+
 # ---------------------------------------------------------------------------
 # AFK view – 4 toggles: ShinyHunt, Collection, TypePings, RegionPings
 # ---------------------------------------------------------------------------
@@ -89,7 +91,7 @@ class AFKView(discord.ui.View):
 
     async def _check_user(self, interaction):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("This button is not for you!", ephemeral=True)
+            await interaction.response.send_message("This button is not for you!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return False
         return True
 
@@ -185,7 +187,7 @@ class _ClearPingsConfirmView(discord.ui.View):
 
     async def _check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return False
         return True
 
@@ -270,7 +272,7 @@ class Settings(commands.Cog):
         )
 
         view = AFKView(ctx.author.id, col_afk, shy_afk, type_afk, rgn_afk, self)
-        msg = await ctx.reply(embed=embed, view=view, mention_author=False)
+        msg = await ctx.reply(embed=embed, view=view, mention_author=False, allowed_mentions=NO_MENTIONS)
         view.message = msg
 
     # ------------------------------------------------------------------
@@ -309,12 +311,13 @@ class Settings(commands.Cog):
                 f"❌ Usage: `{p}force-afk @user <type> <on|off>`\n"
                 f"Types: `collection` `shinyhunt` `typepings` `regionpings` `all`",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
         raw = target.strip("<@!>")
         if not raw.isdigit():
-            await ctx.reply("❌ Invalid user. Use a @mention or numeric user ID.", mention_author=False)
+            await ctx.reply("❌ Invalid user. Use a @mention or numeric user ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
         uid = int(raw)
 
@@ -324,6 +327,7 @@ class Settings(commands.Cog):
                 f"❌ Usage: `{p}force-afk @user <type> <on|off>`\n"
                 f"Types: `collection` `shinyhunt` `typepings` `regionpings` `all`",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -334,11 +338,12 @@ class Settings(commands.Cog):
             await ctx.reply(
                 f"❌ Unknown type `{ping_type}`. Choose from: `collection` `shinyhunt` `typepings` `regionpings` `all`",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
         if state not in ("on", "off"):
-            await ctx.reply("❌ State must be `on` or `off`.", mention_author=False)
+            await ctx.reply("❌ State must be `on` or `off`.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         afk = (state == "on")
@@ -371,12 +376,12 @@ class Settings(commands.Cog):
         embed.add_field(name="State",  value=f"AFK **{'ON' if afk else 'OFF'}**", inline=True)
         embed.add_field(name="Types",  value="\n".join(f"• {l}" for l in labels), inline=False)
         embed.set_footer(text=f"Done by {ctx.author} • User can override with p!afk")
-        await ctx.reply(embed=embed, mention_author=False)
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @force_afk_command.error
     async def force_afk_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False)
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ------------------------------------------------------------------
     # p!role  (group) — shows usage when invoked without subcommand
@@ -460,12 +465,12 @@ class Settings(commands.Cog):
             ),
             inline=False,
         )
-        await ctx.reply(embed=embed, mention_author=False)
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @role_group.error
     async def role_group_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False)
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ── p!role rare [@role] ────────────────────────────────────────────
 
@@ -480,23 +485,23 @@ class Settings(commands.Cog):
         """
         if role is None:
             await self.db.set_rare_role(ctx.guild.id, None)
-            await ctx.reply("✅ Rare role cleared.", mention_author=False)
+            await ctx.reply("✅ Rare role cleared.", mention_author=False, allowed_mentions=NO_MENTIONS)
         else:
             await self.db.set_rare_role(ctx.guild.id, role.id)
-            await ctx.reply(f"✅ Rare role set to {role.mention}", mention_author=False)
+            await ctx.reply(f"✅ Rare role set to {role.mention}", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @role_rare_cmd.error
     async def role_rare_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False)
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
         elif isinstance(error, commands.BadArgument):
             # Accept "none" explicitly typed
             if ctx.message.content.lower().split()[-1] == "none":
                 await self.db.set_rare_role(ctx.guild.id, None)
-                await ctx.reply("✅ Rare role cleared.", mention_author=False)
+                await ctx.reply("✅ Rare role cleared.", mention_author=False, allowed_mentions=NO_MENTIONS)
             else:
                 await ctx.reply(
-                    "❌ Invalid role. Mention a role, use its ID, or omit to clear.", mention_author=False
+                    "❌ Invalid role. Mention a role, use its ID, or omit to clear.", mention_author=False, allowed_mentions=NO_MENTIONS
                 )
 
     # ── p!role regional [@role] ────────────────────────────────────────
@@ -512,22 +517,22 @@ class Settings(commands.Cog):
         """
         if role is None:
             await self.db.set_regional_role(ctx.guild.id, None)
-            await ctx.reply("✅ Regional role cleared.", mention_author=False)
+            await ctx.reply("✅ Regional role cleared.", mention_author=False, allowed_mentions=NO_MENTIONS)
         else:
             await self.db.set_regional_role(ctx.guild.id, role.id)
-            await ctx.reply(f"✅ Regional role set to {role.mention}", mention_author=False)
+            await ctx.reply(f"✅ Regional role set to {role.mention}", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @role_regional_cmd.error
     async def role_regional_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False)
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
         elif isinstance(error, commands.BadArgument):
             if ctx.message.content.lower().split()[-1] == "none":
                 await self.db.set_regional_role(ctx.guild.id, None)
-                await ctx.reply("✅ Regional role cleared.", mention_author=False)
+                await ctx.reply("✅ Regional role cleared.", mention_author=False, allowed_mentions=NO_MENTIONS)
             else:
                 await ctx.reply(
-                    "❌ Invalid role. Mention a role, use its ID, or omit to clear.", mention_author=False
+                    "❌ Invalid role. Mention a role, use its ID, or omit to clear.", mention_author=False, allowed_mentions=NO_MENTIONS
                 )
 
     # ------------------------------------------------------------------
@@ -571,7 +576,7 @@ class Settings(commands.Cog):
         )
 
         embed.set_footer(text=f"Guild ID: {ctx.guild.id}")
-        await ctx.reply(embed=embed, mention_author=False)
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ------------------------------------------------------------------
     # p!toggle <feature>
@@ -599,7 +604,7 @@ class Settings(commands.Cog):
                 ),
                 color=EMBED_COLOR,
             )
-            await ctx.reply(embed=embed, mention_author=False)
+            await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         feature = feature.lower().replace("-", "_")
@@ -609,44 +614,46 @@ class Settings(commands.Cog):
             new_val = not current
             await self.db.set_best_name(ctx.guild.id, new_val)
             status = "enabled ✅" if new_val else "disabled ❌"
-            await ctx.reply(f"Best Name display is now **{status}**", mention_author=False)
+            await ctx.reply(f"Best Name display is now **{status}**", mention_author=False, allowed_mentions=NO_MENTIONS)
 
         elif feature == "only_pings":
             current = await self.db.get_only_pings(ctx.guild.id)
             new_val = not current
             await self.db.set_only_pings(ctx.guild.id, new_val)
             status = "enabled ✅" if new_val else "disabled ❌"
-            await ctx.reply(f"Only-Pings mode is now **{status}**", mention_author=False)
+            await ctx.reply(f"Only-Pings mode is now **{status}**", mention_author=False, allowed_mentions=NO_MENTIONS)
 
         elif feature == "catch_command":
             current = await self.db.get_catch_command(ctx.guild.id)
             new_val = not current
             await self.db.set_catch_command(ctx.guild.id, new_val)
             status = "enabled ✅" if new_val else "disabled ❌"
-            await ctx.reply(f"Catch command line is now **{status}**", mention_author=False)
+            await ctx.reply(f"Catch command line is now **{status}**", mention_author=False, allowed_mentions=NO_MENTIONS)
 
         elif feature == "hint_solver":
             current = await self.db.get_hint_solver(ctx.guild.id)
             new_val = not current
             await self.db.set_hint_solver(ctx.guild.id, new_val)
             status = "enabled ✅" if new_val else "disabled ❌"
-            await ctx.reply(f"Hint solver is now **{status}**", mention_author=False)
+            await ctx.reply(f"Hint solver is now **{status}**", mention_author=False, allowed_mentions=NO_MENTIONS)
 
         else:
             await ctx.reply(
                 f"❌ Unknown feature `{feature}`. Available: `best_name`, `only_pings`, `catch_command`, `hint_solver`",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
 
     @toggle_command.error
     async def toggle_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False)
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
         elif isinstance(error, commands.MissingRequiredArgument):
             p = ctx.prefix
             await ctx.reply(
                 f"❌ Usage: `{p}toggle <feature>` (e.g. `{p}toggle best_name`, `{p}toggle only_pings`)",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
 
     # ------------------------------------------------------------------
@@ -669,19 +676,19 @@ class Settings(commands.Cog):
                 color=EMBED_COLOR,
             )
             embed.set_footer(text="Use 'p!toggle only_pings' to toggle, or 'p!only-pings true/false' to set directly")
-            await ctx.reply(embed=embed, mention_author=False)
+            await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         await self.db.set_only_pings(ctx.guild.id, enabled)
         status = "enabled ✅" if enabled else "disabled ❌"
-        await ctx.reply(f"Only-pings mode is now **{status}**", mention_author=False)
+        await ctx.reply(f"Only-pings mode is now **{status}**", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @only_pings_command.error
     async def only_pings_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False)
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
         elif isinstance(error, commands.BadArgument):
-            await ctx.reply("❌ Invalid argument. Use `true` or `false`", mention_author=False)
+            await ctx.reply("❌ Invalid argument. Use `true` or `false`", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ------------------------------------------------------------------
     # p!clear-pings
@@ -710,7 +717,7 @@ class Settings(commands.Cog):
                         pass
                 target_name = str(user_obj) if user_obj else f"User {target_id}"
             else:
-                await ctx.reply("❌ Invalid user. Use a @mention or numeric user ID.", mention_author=False)
+                await ctx.reply("❌ Invalid user. Use a @mention or numeric user ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
                 return
 
         # ── Permission check ───────────────────────────────────────────
@@ -722,6 +729,7 @@ class Settings(commands.Cog):
             await ctx.reply(
                 "❌ You need to be the server owner, an administrator, or the bot owner to use this command.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -739,11 +747,11 @@ class Settings(commands.Cog):
             target_id=target_id,
             target_name=target_name,
         )
-        await ctx.reply(prompt_text, view=view, mention_author=False)
+        await ctx.reply(prompt_text, view=view, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @clear_server_pings_command.error
     async def clear_server_pings_error(self, ctx, error):
-        await ctx.reply(f"❌ An unexpected error occurred: {error}", mention_author=False)
+        await ctx.reply(f"❌ An unexpected error occurred: {error}", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ------------------------------------------------------------------
     # Slash Commands
@@ -797,6 +805,7 @@ class Settings(commands.Cog):
             return await interaction.response.send_message(
                 "❌ You need to be the server owner, an administrator, or the bot owner.",
                 ephemeral=True,
+                allowed_mentions=NO_MENTIONS,
             )
 
         target_id = None
@@ -805,7 +814,7 @@ class Settings(commands.Cog):
             raw = target.strip("<@!>")
             if not raw.isdigit():
                 return await interaction.response.send_message(
-                    "❌ Invalid user. Use a @mention or numeric user ID.", ephemeral=True
+                    "❌ Invalid user. Use a @mention or numeric user ID.", ephemeral=True, allowed_mentions=NO_MENTIONS
                 )
             target_id = int(raw)
             user_obj = self.bot.get_user(target_id)
@@ -829,7 +838,7 @@ class Settings(commands.Cog):
             target_id=target_id,
             target_name=target_name,
         )
-        await interaction.response.send_message(prompt, view=view, ephemeral=True)
+        await interaction.response.send_message(prompt, view=view, ephemeral=True, allowed_mentions=NO_MENTIONS)
 
 
 async def setup(bot):
