@@ -6,11 +6,13 @@ from discord.ext import commands
 from typing import List
 from utils import (
     load_pokemon_data,
-    find_pokemon_by_name_flexible,
+    find_all_pokemon_by_name_flexible,
     get_pokemon_with_variants,
 )
 from config import EMBED_COLOR, ITEMS_PER_PAGE
 from default_cats import DEFAULT_CATEGORIES
+
+NO_MENTIONS = discord.AllowedMentions.none()
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +162,7 @@ class DefaultCategoryListView(discord.ui.View):
         guild_cats = await cog.db.get_all_categories(ctx.guild.id)
         existing_names = {c["name"] for c in guild_cats}
         view = cls(cog, ctx, existing_names)
-        message = await ctx.reply(embed=cls.build_list_embed(existing_names), view=view, mention_author=False)
+        message = await ctx.reply(embed=cls.build_list_embed(existing_names), view=view, mention_author=False, allowed_mentions=NO_MENTIONS)
         view.message = message
 
 
@@ -384,9 +386,15 @@ class Category(commands.Cog):
                 else:
                     invalid.append(part)
             else:
-                pokemon = find_pokemon_by_name_flexible(part, self.pokemon_data)
-                if pokemon and pokemon.get("name"):
-                    all_pokemon.append(pokemon["name"])
+                # A typed name might match more than one Pokemon (e.g. two
+                # event mons sharing the same "other name"), so add all
+                # matches, not just the first.
+                matches = find_all_pokemon_by_name_flexible(part, self.pokemon_data)
+                if matches:
+                    for pokemon in matches:
+                        canonical = pokemon.get("name")
+                        if canonical and canonical not in all_pokemon:
+                            all_pokemon.append(canonical)
                 else:
                     invalid.append(part)
 
@@ -403,6 +411,7 @@ class Category(commands.Cog):
                 "Usage: `p!cat [create/edit/delete]` or `p!cat [add/remove/list/info]` "
                 "or `p!cat [addpokemon/removepokemon]` or `p!cat defaults`",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
 
     # ------------------------------------------------------------------
@@ -432,7 +441,7 @@ class Category(commands.Cog):
             error_msg = "No valid Pokémon found to add to category"
             if invalid:
                 error_msg += f". Invalid: {', '.join(invalid[:10])}"
-            await ctx.reply(error_msg, mention_author=False)
+            await ctx.reply(error_msg, mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         existing = await self.db.get_category(ctx.guild.id, name)
@@ -440,6 +449,7 @@ class Category(commands.Cog):
             await ctx.reply(
                 f"❌ Category `{name}` already exists. Use `p!cat edit` to modify it.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -450,7 +460,7 @@ class Category(commands.Cog):
             response += f"\n⚠️ Invalid: {', '.join(invalid[:30])}"
             if len(invalid) > 30:
                 response += f" and {len(invalid) - 30} more..."
-        await ctx.reply(response, mention_author=False)
+        await ctx.reply(response, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @category_group.command(name="edit")
     @commands.has_permissions(administrator=True)
@@ -465,6 +475,7 @@ class Category(commands.Cog):
             await ctx.reply(
                 f"❌ Category `{name}` does not exist. Use `p!cat create` to create it.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -474,7 +485,7 @@ class Category(commands.Cog):
             error_msg = "No valid Pokémon found to add to category"
             if invalid:
                 error_msg += f". Invalid: {', '.join(invalid[:10])}"
-            await ctx.reply(error_msg, mention_author=False)
+            await ctx.reply(error_msg, mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         await self.db.update_category(ctx.guild.id, name, pokemon_list)
@@ -484,7 +495,7 @@ class Category(commands.Cog):
             response += f"\n⚠️ Invalid: {', '.join(invalid[:30])}"
             if len(invalid) > 30:
                 response += f" and {len(invalid) - 30} more..."
-        await ctx.reply(response, mention_author=False)
+        await ctx.reply(response, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @category_group.command(name="delete")
     @commands.has_permissions(administrator=True)
@@ -496,9 +507,9 @@ class Category(commands.Cog):
         """
         deleted = await self.db.delete_category(ctx.guild.id, name)
         if deleted:
-            await ctx.reply(f"✅ Deleted category `{name}`", mention_author=False)
+            await ctx.reply(f"✅ Deleted category `{name}`", mention_author=False, allowed_mentions=NO_MENTIONS)
         else:
-            await ctx.reply(f"❌ Category `{name}` does not exist", mention_author=False)
+            await ctx.reply(f"❌ Category `{name}` does not exist", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ------------------------------------------------------------------
     # User commands (add/remove from collection)
@@ -516,7 +527,7 @@ class Category(commands.Cog):
         ))
 
         if not names_list:
-            await ctx.reply("No category names provided", mention_author=False)
+            await ctx.reply("No category names provided", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         total_added = 0
@@ -538,14 +549,14 @@ class Category(commands.Cog):
             error_msg = "No valid categories found"
             if not_found:
                 error_msg += f": {', '.join(not_found)}"
-            await ctx.reply(error_msg, mention_author=False)
+            await ctx.reply(error_msg, mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         response = "✅ " + "\n".join(category_results)
         response += f"\n\n**Total added: {total_added} Pokémon**"
         if not_found:
             response += f"\n❌ Categories not found: {', '.join(not_found)}"
-        await ctx.reply(response, mention_author=False)
+        await ctx.reply(response, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @category_group.command(name="remove")
     async def category_remove(self, ctx, *, category_names: str):
@@ -560,7 +571,7 @@ class Category(commands.Cog):
         ))
 
         if not names_list:
-            await ctx.reply("No category names provided", mention_author=False)
+            await ctx.reply("No category names provided", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         total_removed = 0
@@ -586,14 +597,14 @@ class Category(commands.Cog):
                 error_msg = f"❌ Categories not found or were deleted by server admin: {', '.join(not_found)}"
             else:
                 error_msg = "No Pokémon were removed"
-            await ctx.reply(error_msg, mention_author=False)
+            await ctx.reply(error_msg, mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         response = "✅ " + "\n".join(category_results)
         response += f"\n\n**Total removed: {total_removed} Pokémon**"
         if not_found:
             response += f"\n❌ Categories not found or were deleted by server admin: {', '.join(not_found)}"
-        await ctx.reply(response, mention_author=False)
+        await ctx.reply(response, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ------------------------------------------------------------------
     # Admin Pokémon-level editing
@@ -612,6 +623,7 @@ class Category(commands.Cog):
             await ctx.reply(
                 f"❌ Category `{name}` does not exist. Use `p!cat create` to create it.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -621,14 +633,14 @@ class Category(commands.Cog):
             error_msg = "No valid Pokémon found"
             if invalid:
                 error_msg += f". Invalid: {', '.join(invalid[:10])}"
-            await ctx.reply(error_msg, mention_author=False)
+            await ctx.reply(error_msg, mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         existing_pokemon = set(existing.get("pokemon", []))
         new_pokemon = [p for p in pokemon_list if p not in existing_pokemon]
 
         if not new_pokemon:
-            await ctx.reply(f"All provided Pokémon are already in `{name}`.", mention_author=False)
+            await ctx.reply(f"All provided Pokémon are already in `{name}`.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         merged = list(existing_pokemon) + new_pokemon
@@ -647,7 +659,7 @@ class Category(commands.Cog):
             response += f"\n⚠️ Invalid: {', '.join(invalid[:30])}"
             if len(invalid) > 30:
                 response += f" and {len(invalid) - 30} more..."
-        await ctx.reply(response, mention_author=False)
+        await ctx.reply(response, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @category_group.command(name="removepokemon", aliases=["removepoke"])
     @commands.has_permissions(administrator=True)
@@ -660,7 +672,7 @@ class Category(commands.Cog):
         """
         existing = await self.db.get_category(ctx.guild.id, name)
         if not existing:
-            await ctx.reply(f"❌ Category `{name}` does not exist.", mention_author=False)
+            await ctx.reply(f"❌ Category `{name}` does not exist.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         pokemon_list, invalid = self.parse_pokemon_input(pokemon_input)
@@ -669,7 +681,7 @@ class Category(commands.Cog):
             error_msg = "No valid Pokémon found"
             if invalid:
                 error_msg += f". Invalid: {', '.join(invalid[:10])}"
-            await ctx.reply(error_msg, mention_author=False)
+            await ctx.reply(error_msg, mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         existing_pokemon = set(existing.get("pokemon", []))
@@ -679,7 +691,7 @@ class Category(commands.Cog):
         not_in_category = [p for p in pokemon_list if p not in existing_pokemon]
 
         if not actually_removed:
-            await ctx.reply(f"None of the provided Pokémon are in `{name}`.", mention_author=False)
+            await ctx.reply(f"None of the provided Pokémon are in `{name}`.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         updated = [p for p in existing.get("pokemon", []) if p not in to_remove]
@@ -697,7 +709,7 @@ class Category(commands.Cog):
             response += f"\n⚠️ Invalid: {', '.join(invalid[:30])}"
             if len(invalid) > 30:
                 response += f" and {len(invalid) - 30} more..."
-        await ctx.reply(response, mention_author=False)
+        await ctx.reply(response, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ------------------------------------------------------------------
     # Info / listing
@@ -712,6 +724,7 @@ class Category(commands.Cog):
                 "This server has no categories yet. "
                 "Use `p!cat defaults` to add built-in ones, or `p!cat create` to make your own.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -725,7 +738,7 @@ class Category(commands.Cog):
         ]
         embed.description = "\n".join(lines)
         embed.set_footer(text=f"Total categories: {len(categories)}")
-        await ctx.reply(embed=embed, mention_author=False)
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @category_group.command(name="info")
     async def category_info(self, ctx, *, name: str):
@@ -737,20 +750,20 @@ class Category(commands.Cog):
         category = await self.db.get_category(ctx.guild.id, name)
 
         if not category:
-            await ctx.reply(f"❌ Category `{name}` does not exist", mention_author=False)
+            await ctx.reply(f"❌ Category `{name}` does not exist", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         pokemon_list = sorted(category.get("pokemon", []))
 
         if not pokemon_list:
-            await ctx.reply(f"Category `{name}` is empty", mention_author=False)
+            await ctx.reply(f"Category `{name}` is empty", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         total_pages = math.ceil(len(pokemon_list) / ITEMS_PER_PAGE)
 
         if total_pages > 1:
             view = CategoryPaginationView(ctx.author.id, name, pokemon_list, 1, total_pages)
-            message = await ctx.reply(embed=view.create_embed(1), view=view, mention_author=False)
+            message = await ctx.reply(embed=view.create_embed(1), view=view, mention_author=False, allowed_mentions=NO_MENTIONS)
             view.message = message
         else:
             embed = discord.Embed(
@@ -759,7 +772,7 @@ class Category(commands.Cog):
                 color=EMBED_COLOR,
             )
             embed.set_footer(text=f"Total: {len(pokemon_list)} Pokémon")
-            await ctx.reply(embed=embed, mention_author=False)
+            await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ------------------------------------------------------------------
     # Error handlers
@@ -775,11 +788,13 @@ class Category(commands.Cog):
             await ctx.reply(
                 "❌ You need administrator permissions to use this command.",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
         elif isinstance(error, commands.MissingRequiredArgument):
             await ctx.reply(
                 f"❌ Missing required argument: `{error.param.name}`",
                 mention_author=False,
+                allowed_mentions=NO_MENTIONS,
             )
 
     # ------------------------------------------------------------------
