@@ -11,6 +11,8 @@ from utils import (
 )
 from config import EMBED_COLOR
 
+NO_MENTIONS = discord.AllowedMentions.none()
+
 class ShinyHunt(commands.Cog):
     """Shiny hunt management commands"""
 
@@ -70,9 +72,9 @@ class ShinyHunt(commands.Cog):
                     current_hunts = [current_hunts]
 
                 hunt_list = ", ".join(f"**{hunt}**" for hunt in current_hunts)
-                await ctx.reply(f"You are currently hunting: {hunt_list}", mention_author=False)
+                await ctx.reply(f"You are currently hunting: {hunt_list}", mention_author=False, allowed_mentions=NO_MENTIONS)
             else:
-                await ctx.reply("You are not hunting anything", mention_author=False)
+                await ctx.reply("You are not hunting anything", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         args_lower = args.strip().lower()
@@ -82,9 +84,9 @@ class ShinyHunt(commands.Cog):
             cleared = await self.db.clear_shiny_hunt(ctx.author.id, ctx.guild.id)
 
             if cleared:
-                await ctx.reply("✅ Shiny hunt cleared successfully", mention_author=False)
+                await ctx.reply("✅ Shiny hunt cleared successfully", mention_author=False, allowed_mentions=NO_MENTIONS)
             else:
-                await ctx.reply("You are not hunting anything", mention_author=False)
+                await ctx.reply("You are not hunting anything", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         # Parse Pokemon names
@@ -102,7 +104,7 @@ class ShinyHunt(commands.Cog):
             variants = get_pokemon_with_variants(base_name, self.pokemon_data)
 
             if not variants:
-                await ctx.reply(f"❌ Invalid Pokemon name: {base_name}", mention_author=False)
+                await ctx.reply(f"❌ Invalid Pokemon name: {base_name}", mention_author=False, allowed_mentions=NO_MENTIONS)
                 return
 
             pokemon_to_hunt = variants
@@ -115,7 +117,7 @@ class ShinyHunt(commands.Cog):
                 matches = find_all_pokemon_by_name_flexible(name, self.pokemon_data)
 
                 if not matches:
-                    await ctx.reply(f"❌ Invalid Pokemon name: {name}", mention_author=False)
+                    await ctx.reply(f"❌ Invalid Pokemon name: {name}", mention_author=False, allowed_mentions=NO_MENTIONS)
                     return
 
                 canonical_names = [p['name'] for p in matches if p.get('name')]
@@ -127,7 +129,7 @@ class ShinyHunt(commands.Cog):
                         pokemon_to_hunt.append(canonical)
 
         if not pokemon_to_hunt:
-            await ctx.reply("Please provide a Pokemon name to hunt, or use 'clear' to stop hunting.", mention_author=False)
+            await ctx.reply("Please provide a Pokemon name to hunt, or use 'clear' to stop hunting.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         # Check if all Pokemon have the same dex number
@@ -135,12 +137,12 @@ class ShinyHunt(commands.Cog):
         for poke_name in pokemon_to_hunt:
             dex = self.get_base_dex_number(poke_name)
             if dex is None:
-                await ctx.reply(f"❌ Could not determine dex number for: {poke_name}", mention_author=False)
+                await ctx.reply(f"❌ Could not determine dex number for: {poke_name}", mention_author=False, allowed_mentions=NO_MENTIONS)
                 return
             dex_numbers.add(dex)
 
         if len(dex_numbers) > 1:
-            await ctx.reply("❌ You can only hunt Pokemon with the same Pokédex number! All variants must be from the same base Pokemon.", mention_author=False)
+            await ctx.reply("❌ You can only hunt Pokemon with the same Pokédex number! All variants must be from the same base Pokemon.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         # Warning for Pokemon with variants when not using "all"
@@ -160,7 +162,7 @@ class ShinyHunt(commands.Cog):
                                 f"`p!sh Alolan {base_name}, Galarian {base_name}` <- just an example",
                     color=0xFFA500  # Orange color for warning
                 )
-                await ctx.reply(embed=embed, mention_author=False)
+                await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
         # Set the shiny hunt (now supporting multiple variants)
         await self.db.set_shiny_hunt(ctx.author.id, ctx.guild.id, pokemon_to_hunt)
@@ -179,7 +181,7 @@ class ShinyHunt(commands.Cog):
             ]
             response += "\n\n" + "\n".join(note_lines)
 
-        await ctx.reply(response, mention_author=False)
+        await ctx.reply(response, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @staticmethod
     def _build_who_embeds(title: str, user_ids, color=EMBED_COLOR):
@@ -235,7 +237,7 @@ class ShinyHunt(commands.Cog):
         pokemon = find_pokemon_by_name_flexible(pokemon_name, self.pokemon_data)
 
         if not pokemon or not pokemon.get('name'):
-            await ctx.reply(f"❌ Invalid Pokemon name: {pokemon_name}", mention_author=False)
+            await ctx.reply(f"❌ Invalid Pokemon name: {pokemon_name}", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         resolved_name = pokemon['name']
@@ -247,7 +249,7 @@ class ShinyHunt(commands.Cog):
         user_ids = [user_id for user_id, is_afk in raw_hunters if not is_afk]
 
         if not user_ids:
-            await ctx.reply(f"No one in this server is hunting **{resolved_name}**.", mention_author=False)
+            await ctx.reply(f"No one in this server is hunting **{resolved_name}**.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         embeds = self._build_who_embeds(f"✨ Hunters of {resolved_name}", user_ids)
