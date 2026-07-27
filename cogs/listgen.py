@@ -52,6 +52,8 @@ from listgen_data import (
     apply_filters,
 )
 
+NO_MENTIONS = discord.AllowedMentions.none()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
@@ -430,7 +432,7 @@ class AddModal(discord.ui.Modal, title="Add Pokémon - Enter filters"):
 
     async def on_submit(self, interaction: discord.Interaction):
         if interaction.user.id != self._view.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
 
         filter1 = self.filter1.value.strip()
@@ -451,7 +453,7 @@ class AddModal(discord.ui.Modal, title="Add Pokémon - Enter filters"):
                     matched.extend(results)
                 except Exception as e:
                     await interaction.response.send_message(
-                        f"❌ Filter error in '{f}': {str(e)}", ephemeral=True
+                        f"❌ Filter error in '{f}': {str(e)}", ephemeral=True, allowed_mentions=NO_MENTIONS
                     )
                     return
             else:
@@ -503,7 +505,7 @@ class RemoveModal(discord.ui.Modal, title="Remove Pokémon - Enter filters"):
 
     async def on_submit(self, interaction: discord.Interaction):
         if interaction.user.id != self._view.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
 
         filter1 = self.filter1.value.strip()
@@ -524,7 +526,7 @@ class RemoveModal(discord.ui.Modal, title="Remove Pokémon - Enter filters"):
                     matched.extend(results)
                 except Exception as e:
                     await interaction.response.send_message(
-                        f"❌ Filter error in '{f}': {str(e)}", ephemeral=True
+                        f"❌ Filter error in '{f}': {str(e)}", ephemeral=True, allowed_mentions=NO_MENTIONS
                     )
                     return
             else:
@@ -576,7 +578,7 @@ class FilterModal(discord.ui.Modal, title="Filter List – Keep Matching Pokémo
 
     async def on_submit(self, interaction: discord.Interaction):
         if interaction.user.id != self._view.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
 
         filters = [
@@ -587,7 +589,7 @@ class FilterModal(discord.ui.Modal, title="Filter List – Keep Matching Pokémo
 
         if not any(filters):
             await interaction.response.send_message(
-                "❌ Enter at least one filter.", ephemeral=True
+                "❌ Enter at least one filter.", ephemeral=True, allowed_mentions=NO_MENTIONS
             )
             return
 
@@ -602,7 +604,7 @@ class FilterModal(discord.ui.Modal, title="Filter List – Keep Matching Pokémo
                     keep_lower.update(n.lower() for n in results)
                 except Exception as e:
                     await interaction.response.send_message(
-                        f"❌ Filter error in '{f}': {str(e)}", ephemeral=True
+                        f"❌ Filter error in '{f}': {str(e)}", ephemeral=True, allowed_mentions=NO_MENTIONS
                     )
                     return
             else:
@@ -646,13 +648,13 @@ class EncloseModal(discord.ui.Modal, title="Enclose Names"):
 
     async def on_submit(self, interaction: discord.Interaction):
         if interaction.user.id != self._view.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         # Discord strips leading/trailing whitespace from modal inputs.
         # Users can type \s where they want a space (e.g. ":joy \s" → ":joy ").
         self._view.state.enclose_before = self.before.value.replace("\\s", " ")
         self._view.state.enclose_after = self.after.value.replace("\\s", " ")
-        await interaction.response.send_message("✅ Enclosure applied.", ephemeral=True)
+        await interaction.response.send_message("✅ Enclosure applied.", ephemeral=True, allowed_mentions=NO_MENTIONS)
         # Update main builder embed
         if self._view.message:
             await self._view.message.edit(
@@ -681,11 +683,11 @@ class ReplaceModal(discord.ui.Modal, title="Find & Replace"):
 
     async def on_submit(self, interaction: discord.Interaction):
         if interaction.user.id != self._view.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self._view.state.replace_from = self.find.value
         self._view.state.replace_to = self.replace.value
-        await interaction.response.send_message("✅ Find-and-replace set.", ephemeral=True)
+        await interaction.response.send_message("✅ Find-and-replace set.", ephemeral=True, allowed_mentions=NO_MENTIONS)
         # Update main builder embed
         if self._view.message:
             await self._view.message.edit(
@@ -751,13 +753,13 @@ class FormatSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self.builder_view.state.format_key = self.values[0]
         format_label = next(l for l, k in ListState.FORMAT_OPTIONS if k == self.values[0])
         await interaction.response.send_message(
             f"✅ Format set to {format_label}.",
-            ephemeral=True
+            ephemeral=True, allowed_mentions=NO_MENTIONS
         )
         # Update main builder embed
         if self.builder_view.message:
@@ -776,13 +778,13 @@ class CaseSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self.builder_view.state.case_key = self.values[0]
         case_label = next(l for l, k in ListState.CASE_OPTIONS if k == self.values[0])
         await interaction.response.send_message(
             f"✅ Case set to {case_label}.",
-            ephemeral=True
+            ephemeral=True, allowed_mentions=NO_MENTIONS
         )
         # Update main builder embed
         if self.builder_view.message:
@@ -801,13 +803,13 @@ class LangSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self.builder_view.state.lang_key = self.values[0]
         lang_label = next(l for l, k in ListState.LANG_OPTIONS if k == self.values[0])
         await interaction.response.send_message(
             f"✅ Language set to {lang_label}.",
-            ephemeral=True
+            ephemeral=True, allowed_mentions=NO_MENTIONS
         )
         # Update main builder embed
         if self.builder_view.message:
@@ -826,13 +828,13 @@ class SortSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self.builder_view.state.sort_key = self.values[0]
         sort_label = next(l for l, k in ListState.SORT_OPTIONS if k == self.values[0])
         await interaction.response.send_message(
             f"✅ Sort order set to {sort_label}.",
-            ephemeral=True
+            ephemeral=True, allowed_mentions=NO_MENTIONS
         )
         # Update main builder embed
         if self.builder_view.message:
@@ -850,12 +852,12 @@ class AdvLangSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self.builder_view.state.lang_key = self.values[0]
         label = next(l for l, k in ListState.LANG_OPTIONS if k == self.values[0])
         self.placeholder = f"🌐 Language — {label}"
-        await interaction.response.send_message(f"✅ Language set to {label}.", ephemeral=True)
+        await interaction.response.send_message(f"✅ Language set to {label}.", ephemeral=True, allowed_mentions=NO_MENTIONS)
         if self.builder_view.message:
             await self.builder_view.message.edit(
                 embed=self.builder_view.build_embed(),
@@ -871,12 +873,12 @@ class AdvSortSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self.builder_view.state.sort_key = self.values[0]
         label = next(l for l, k in ListState.SORT_OPTIONS if k == self.values[0])
         self.placeholder = f"🔀 Sort — {label}"
-        await interaction.response.send_message(f"✅ Sort set to {label}.", ephemeral=True)
+        await interaction.response.send_message(f"✅ Sort set to {label}.", ephemeral=True, allowed_mentions=NO_MENTIONS)
         if self.builder_view.message:
             await self.builder_view.message.edit(
                 embed=self.builder_view.build_embed(),
@@ -921,19 +923,19 @@ class AdvancedOptionsView(discord.ui.View):
     @discord.ui.button(label="Replace", emoji="🔄", style=discord.ButtonStyle.secondary, row=2)
     async def replace_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         await interaction.response.send_modal(ReplaceModal(self.builder_view))
 
     @discord.ui.button(label="Events", emoji="🎉", style=discord.ButtonStyle.secondary, row=2)
     async def events_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
 
         self.builder_view.state.event_mode = not self.builder_view.state.event_mode
         status = "✅ Including event Pokémon" if self.builder_view.state.event_mode else "⛔ Excluding event Pokémon"
-        await interaction.response.send_message(status, ephemeral=True)
+        await interaction.response.send_message(status, ephemeral=True, allowed_mentions=NO_MENTIONS)
         # Update main builder embed
         if self.builder_view.message:
             await self.builder_view.message.edit(
@@ -970,11 +972,11 @@ class PaginatorView(discord.ui.View):
     @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
     async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self.current -= 1
         self._update_buttons()
-        await interaction.response.edit_message(content=self.pages[self.current], view=self)
+        await interaction.response.edit_message(content=self.pages[self.current], view=self, allowed_mentions=NO_MENTIONS)
 
     @discord.ui.button(label="1 / ?", style=discord.ButtonStyle.secondary, disabled=True)
     async def page_label(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -983,11 +985,11 @@ class PaginatorView(discord.ui.View):
     @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self.current += 1
         self._update_buttons()
-        await interaction.response.edit_message(content=self.pages[self.current], view=self)
+        await interaction.response.edit_message(content=self.pages[self.current], view=self, allowed_mentions=NO_MENTIONS)
 
     async def on_timeout(self):
         self.clear_items()
@@ -1019,7 +1021,7 @@ class MainCaseSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self.builder_view.state.case_key = self.values[0]
         case_label = next(l for l, k in ListState.CASE_OPTIONS if k == self.values[0])
@@ -1084,7 +1086,7 @@ class ListBuilderView(discord.ui.View):
     @discord.ui.button(label="Add", emoji="➕", style=discord.ButtonStyle.primary, row=0)
     async def add_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self._refresh_timeout()
         await interaction.response.send_modal(AddModal(self))
@@ -1092,7 +1094,7 @@ class ListBuilderView(discord.ui.View):
     @discord.ui.button(label="Filter", emoji="🔍", style=discord.ButtonStyle.primary, row=0)
     async def filter_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self._refresh_timeout()
         await interaction.response.send_modal(FilterModal(self))
@@ -1100,7 +1102,7 @@ class ListBuilderView(discord.ui.View):
     @discord.ui.button(label="Remove", emoji="➖", style=discord.ButtonStyle.danger, row=0)
     async def remove_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self._refresh_timeout()
         await interaction.response.send_modal(RemoveModal(self))
@@ -1108,7 +1110,7 @@ class ListBuilderView(discord.ui.View):
     @discord.ui.button(label="Clear", emoji="🗑", style=discord.ButtonStyle.danger, row=0)
     async def clear_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self._refresh_timeout()
         self.state.clear()
@@ -1125,7 +1127,7 @@ class ListBuilderView(discord.ui.View):
     @discord.ui.button(label="📄 Comma", style=discord.ButtonStyle.secondary, row=1)
     async def format_cycle_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self._refresh_timeout()
         cycle = self._FORMAT_CYCLE
@@ -1141,7 +1143,7 @@ class ListBuilderView(discord.ui.View):
     @discord.ui.button(label="🔤 Enclose", style=discord.ButtonStyle.secondary, row=1)
     async def enclose_main_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self._refresh_timeout()
         await interaction.response.send_modal(EncloseModal(self))
@@ -1149,20 +1151,20 @@ class ListBuilderView(discord.ui.View):
     @discord.ui.button(label="⚙️ Advanced", style=discord.ButtonStyle.secondary, row=1)
     async def advanced_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self._refresh_timeout()
         view = AdvancedOptionsView(self, self.owner_id)
         await interaction.response.send_message(
             "**Advanced options — Language, Sort, Replace, Events:**",
             view=view,
-            ephemeral=True
+            ephemeral=True, allowed_mentions=NO_MENTIONS
         )
 
     @discord.ui.button(label="📤 Send", style=discord.ButtonStyle.success, row=1)
     async def send_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not yours!", ephemeral=True)
+            await interaction.response.send_message("Not yours!", ephemeral=True, allowed_mentions=NO_MENTIONS)
             return
         self._refresh_timeout()
 
@@ -1170,6 +1172,7 @@ class ListBuilderView(discord.ui.View):
             await interaction.response.send_message(
                 "❌ List is empty.",
                 ephemeral=True,
+                allowed_mentions=NO_MENTIONS,
             )
             return
 
@@ -1235,13 +1238,14 @@ class ListBuilderView(discord.ui.View):
                 pages.append("`" + prefix + flag.join(current) + "`")
 
         if len(pages) == 1:
-            await interaction.response.send_message(pages[0])
+            await interaction.response.send_message(pages[0], allowed_mentions=NO_MENTIONS)
         else:
             # Send with paginator buttons
             view = PaginatorView(pages, interaction.user.id)
             await interaction.response.send_message(
                 pages[0],
                 view=view,
+                allowed_mentions=NO_MENTIONS,
             )
             view.message = await interaction.original_response()
 
@@ -1317,7 +1321,7 @@ class ListGen(commands.Cog):
         embed = view.build_embed(
             f"✅ Extracted {len(state.names)} Pokémon from message." if source_msg else ""
         )
-        bot_msg = await ctx.reply(embed=embed, view=view, mention_author=False)
+        bot_msg = await ctx.reply(embed=embed, view=view, mention_author=False, allowed_mentions=NO_MENTIONS)
         view.message = bot_msg
 
         # Start edit-watcher if we have a source message
