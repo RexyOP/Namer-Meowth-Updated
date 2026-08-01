@@ -276,7 +276,7 @@ class Settings(commands.Cog):
         view.message = msg
 
     # ------------------------------------------------------------------
-    # p!force-afk  (admin only)
+    # p!force-afk  (bot owner only)
     # ------------------------------------------------------------------
 
     _FORCE_AFK_TYPES = {"collection", "shinyhunt", "typepings", "regionpings", "all"}
@@ -288,7 +288,7 @@ class Settings(commands.Cog):
     }
 
     @commands.command(name="force-afk", aliases=["forceafk", "fafk"])
-    @commands.has_permissions(administrator=True)
+    @commands.is_owner()
     async def force_afk_command(self, ctx, target: str = None, ping_type: str = None, state: str = None):
         """Force a user's AFK state on one or all ping types.
 
@@ -380,8 +380,8 @@ class Settings(commands.Cog):
 
     @force_afk_command.error
     async def force_afk_error(self, ctx, error):
-        if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        if isinstance(error, commands.NotOwner):
+            await ctx.reply("❌ This command is restricted to the bot owner.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ------------------------------------------------------------------
     # p!role  (group) — shows usage when invoked without subcommand
