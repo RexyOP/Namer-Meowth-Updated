@@ -84,7 +84,7 @@ class Help(commands.Cog):
             embed.add_field(name=f"`{prefix}cl clear`", value="⚠️ Clear your entire collection",      inline=False)
             embed.add_field(
                 name=f"`{prefix}cl who <pokemon>`",
-                value=f"See everyone in this server collecting a Pokémon (pings them) — `{prefix}cl who Eevee`",
+                value=f"See everyone in this server collecting a Pokémon — `{prefix}cl who Eevee`",
                 inline=False,
             )
             embed.add_field(
@@ -133,7 +133,7 @@ class Help(commands.Cog):
             embed.add_field(name=f"`{prefix}sh clear`",         value="Stop hunting (also accepts `none` / `stop`)", inline=False)
             embed.add_field(
                 name=f"`{prefix}sh who <pokemon>`",
-                value=f"See everyone in this server hunting a Pokémon (pings them) — `{prefix}sh who Eevee`",
+                value=f"See everyone in this server hunting a Pokémon — `{prefix}sh who Eevee`",
                 inline=False,
             )
             embed.add_field(
@@ -201,7 +201,7 @@ class Help(commands.Cog):
             embed.add_field(
                 name=f"`{prefix}force-afk @user <type> <on|off>`",
                 value=(
-                    "Forcefully set a user's AFK state on any ping type  **(Admin only)**\n"
+                    "Forcefully set a user's AFK state on any ping type  **(Owner only)**\n"
                     f"**Aliases:** `{prefix}forceafk`, `{prefix}fafk`\n"
                     f"• `{prefix}force-afk @user all on` — AFK on all 4 types at once\n"
                     f"• `{prefix}force-afk @user all off` — remove AFK on all 4 types\n"
