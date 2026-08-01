@@ -92,7 +92,7 @@ SECONDARY_LABELS_PATH = os.path.join(CACHE_DIR, "event_labels.json")
 #         p!model load before predictions work (saves RAM until needed).
 # False → models are downloaded/loaded automatically during bot startup.
 # -----------------------------------------------------------------------
-LAZY_LOAD_MODELS = True
+LAZY_LOAD_MODELS = False
 
 # -----------------------------------------------------------------------
 # Confidence thresholds — edit these to tune prediction behaviour
