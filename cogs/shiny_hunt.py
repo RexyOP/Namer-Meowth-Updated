@@ -80,7 +80,7 @@ class ShinyHunt(commands.Cog):
         args_lower = args.strip().lower()
 
         # Clear hunt
-        if args_lower in ["clear", "none", "stop"]:
+        if args_lower in ["clear", "none", "reset", "stop"]:
             cleared = await self.db.clear_shiny_hunt(ctx.author.id, ctx.guild.id)
 
             if cleared:
