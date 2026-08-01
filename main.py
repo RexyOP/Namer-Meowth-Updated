@@ -14,21 +14,32 @@ from config import TOKEN, BOT_PREFIX
 
 NO_MENTIONS = discord.AllowedMentions.none()
 
-# Custom prefix function for case-insensitive prefixes
+# Custom prefix function for case-insensitive, space-tolerant prefixes
+def _consume_extra_spaces(content, matched_prefix):
+    """Extend the matched prefix to also swallow any extra spaces/tabs
+    right after it, so 'p!   sh' is treated the same as 'p!sh'."""
+    idx = len(matched_prefix)
+    while idx < len(content) and content[idx] in (' ', '\t'):
+        idx += 1
+    return content[:idx]
+
+
 def get_prefix(bot, message):
-    content_lower = message.content.lower()
+    content = message.content
+    content_lower = content.lower()
 
     # Allow mentioning the bot as a prefix (e.g. @BotName help)
     mention_prefixes = [f'<@{bot.user.id}> ', f'<@!{bot.user.id}> '] if bot.user else []
 
     for prefix in mention_prefixes:
-        if message.content.startswith(prefix):
-            return prefix
+        if content.startswith(prefix):
+            return _consume_extra_spaces(content, prefix)
 
     for prefix in BOT_PREFIX:
         prefix_lower = prefix.lower()
         if content_lower.startswith(prefix_lower):
-            return message.content[:len(prefix)]
+            matched = content[:len(prefix)]
+            return _consume_extra_spaces(content, matched)
 
     return BOT_PREFIX
 
