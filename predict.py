@@ -87,6 +87,14 @@ SECONDARY_ONNX_PATH  = os.path.join(CACHE_DIR, "event.onnx")
 SECONDARY_LABELS_PATH = os.path.join(CACHE_DIR, "event_labels.json")
 
 # -----------------------------------------------------------------------
+# Lazy loading toggle
+# True  → models are NOT loaded at startup; an admin/owner must run
+#         p!model load before predictions work (saves RAM until needed).
+# False → models are downloaded/loaded automatically during bot startup.
+# -----------------------------------------------------------------------
+LAZY_LOAD_MODELS = True
+
+# -----------------------------------------------------------------------
 # Confidence thresholds — edit these to tune prediction behaviour
 # If primary model confidence >= PRIMARY_CONFIDENCE_THRESHOLD, use it directly.
 # Otherwise try secondary model if >= SECONDARY_CONFIDENCE_THRESHOLD.
@@ -247,6 +255,19 @@ class Prediction:
         self._inference_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="onnx")  # dedicated pool, never shared with bot I/O
         self._prediction_counter = 0
         self._loop = None  # cached event loop reference
+
+    async def maybe_eager_load(self, session: aiohttp.ClientSession):
+        """Call this once during bot startup.
+
+        If LAZY_LOAD_MODELS is False, this loads the models immediately
+        (equivalent to running p!model load). If True, this is a no-op —
+        models stay unloaded until an admin/owner runs p!model load.
+        """
+        if LAZY_LOAD_MODELS:
+            print("[INIT] LAZY_LOAD_MODELS is True — skipping eager load. Use p!model load when ready.")
+            return
+        print("[INIT] LAZY_LOAD_MODELS is False — loading models now at startup...")
+        await self.initialize_models(session)
 
     async def initialize_models(self, session: aiohttp.ClientSession):
         """Download and initialize both models - ONLY ONCE"""
