@@ -9,7 +9,7 @@ import time
 from discord.ext import commands
 from discord import app_commands
 from database import Database
-from predict import Prediction
+from predict import Prediction, LAZY_LOAD_MODELS
 from config import TOKEN, BOT_PREFIX
 
 NO_MENTIONS = discord.AllowedMentions.none()
@@ -55,10 +55,11 @@ bot.prediction_count = 0
 
 
 async def initialize_predictor():
-    """Create the Prediction object — does NOT load models into RAM."""
+    """Create the Prediction object. Whether models load immediately depends
+    on the LAZY_LOAD_MODELS flag in predict.py (applied later via maybe_eager_load)."""
     try:
         bot.predictor = Prediction()
-        print("✅ Predictor object created (models not loaded — use p!model load when ready)")
+        print("✅ Predictor object created")
     except Exception as e:
         print(f"❌ Failed to create predictor: {e}")
 
@@ -141,6 +142,10 @@ async def on_ready():
     await initialize_predictor()
     await initialize_database()
 
+    # Load models now if LAZY_LOAD_MODELS is False; otherwise this is a no-op
+    # and models stay unloaded until p!model load is run.
+    await bot.predictor.maybe_eager_load(bot.http_session)
+
     cogs_to_load = [
         'cogs.collection',
         'cogs.type_region',
@@ -197,8 +202,10 @@ async def on_ready():
         print(f"⚠️ Failed to load {failed_count} cogs")
     print(f"🌐 Serving {len(bot.guilds)} guilds")
     print(f"👥 Serving {sum(g.member_count for g in bot.guilds)} users")
-    print(f"💾 RAM at startup: {post_startup_mem:.1f} MB (models not loaded)")
-    print(f"💡 Use p!model load to load prediction models when starting an incense session")
+    models_loaded = bot.predictor and bot.predictor.models_initialized
+    print(f"💾 RAM at startup: {post_startup_mem:.1f} MB (models {'loaded' if models_loaded else 'not loaded'})")
+    if not models_loaded:
+        print(f"💡 Use p!model load to load prediction models when starting an incense session")
     print(f"{'='*50}\n")
 
     asyncio.create_task(memory_monitor())
