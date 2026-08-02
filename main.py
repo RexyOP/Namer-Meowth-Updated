@@ -159,6 +159,7 @@ async def on_ready():
 
     cogs_to_load = [
         'cogs.collection',
+        'cogs.shiny_count',
         'cogs.type_region',
         'cogs.shiny_hunt',
         'cogs.settings',
