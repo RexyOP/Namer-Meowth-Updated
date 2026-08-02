@@ -86,7 +86,7 @@ class ReserveListView(discord.ui.View):
 # Helper to build paginated reserve list embeds
 # ---------------------------------------------------------------------------
 def build_reserve_list_embeds(
-    guild_name: str, reserve_docs: list[dict], guild: discord.Guild = None
+    guild_name: str, reserve_docs: list[dict], member_names: dict[int, str] = None
 ) -> list[discord.Embed]:
     """
     Build a list of Discord embeds for the reserve list.
@@ -94,9 +94,11 @@ def build_reserve_list_embeds(
     First page starts with a summary of all users and their counts.
     Users are shown with their mention as a header, pokemon as bullet lines.
 
-    If `guild` is provided, the summary line for each user also shows their
-    display name after the mention (e.g. "<@id> (Username) — 3").
+    If `member_names` is provided (a dict of user_id -> display name), the
+    summary line for each user also shows their name after the mention
+    (e.g. "<@id> (Username) — 3").
     """
+    member_names = member_names or {}
     if not reserve_docs:
         embed = discord.Embed(
             title=f"📋 Reserve List — {guild_name}",
@@ -123,8 +125,8 @@ def build_reserve_list_embeds(
     summary_lines = []
     for uid, pokes in pairs:
         count = len(pokes)
-        member = guild.get_member(uid) if guild else None
-        name_suffix = f" ({member.display_name})" if member else ""
+        name = member_names.get(uid)
+        name_suffix = f" ({name})" if name else ""
         summary_lines.append(f"<@{uid}>{name_suffix} — {count}")
     
     summary_text = "\n".join(summary_lines)
@@ -805,7 +807,20 @@ class Reserve(commands.Cog):
             docs = [{"user_id": uid, "pokemon": pokemon_list}]
             guild_name = f"{ctx.guild.name} — <@{uid}>"
 
-        pages = build_reserve_list_embeds(guild_name, docs, guild=ctx.guild)
+        # Resolve display names for the summary line — check cache first,
+        # fall back to an API fetch for members not already cached.
+        member_names: dict[int, str] = {}
+        for uid, _pokes in [(d["user_id"], d.get("pokemon")) for d in docs]:
+            member = ctx.guild.get_member(uid)
+            if member is None:
+                try:
+                    member = await ctx.guild.fetch_member(uid)
+                except (discord.NotFound, discord.HTTPException):
+                    member = None
+            if member:
+                member_names[uid] = member.display_name
+
+        pages = build_reserve_list_embeds(guild_name, docs, member_names=member_names)
 
         if len(pages) == 1:
             await ctx.reply(embed=pages[0], mention_author=False, allowed_mentions=NO_MENTIONS)
