@@ -171,7 +171,8 @@ class StarboardCatch(commands.Cog):
         # find_pokemon_image_url handles gigantamax/eternamax lookup internally
         image_url = find_pokemon_image_url(pokemon_name, is_shiny, gender, is_gigantamax)
         
-        embed = discord.Embed(color=EMBED_COLOR, timestamp=datetime.utcnow())
+        embed_timestamp = original_message.created_at if original_message else datetime.utcnow()
+        embed = discord.Embed(color=EMBED_COLOR, timestamp=embed_timestamp)
         
         if message_type == 'missingno':
             if is_shiny:
@@ -285,7 +286,7 @@ class StarboardCatch(commands.Cog):
                 f"**Milestone:** {formatted_count}th caught"
             ),
             color=EMBED_COLOR,
-            timestamp=datetime.utcnow()
+            timestamp=(original_message.created_at if original_message else datetime.utcnow())
         )
 
         if image_url:
@@ -409,6 +410,113 @@ class StarboardCatch(commands.Cog):
                 pass
         return False
     
+    async def _resolve_catch_message(self, ctx, message_id: int):
+        """Fetch a message by ID (searching the whole guild if needed) and validate it's from Poketwo.
+
+        Returns (original_message, catch_content, error_str). error_str is None on success.
+        """
+        try:
+            try:
+                original_message = await ctx.channel.fetch_message(message_id)
+            except discord.NotFound:
+                original_message = None
+                for channel in ctx.guild.text_channels:
+                    if channel.permissions_for(ctx.guild.me).read_message_history:
+                        try:
+                            original_message = await channel.fetch_message(message_id)
+                            break
+                        except (discord.NotFound, discord.Forbidden):
+                            continue
+                if not original_message:
+                    return None, None, f"❌ Could not find message with ID `{message_id}` in this server."
+
+            if original_message.author.id != POKETWO_USER_ID:
+                return None, None, f"❌ The message with ID `{message_id}` is not from Poketwo."
+
+            return original_message, original_message.content, None
+        except Exception as e:
+            return None, None, f"❌ Error fetching message `{message_id}`: {str(e)}"
+
+    async def _process_catch(self, ctx, catch_message: str, original_message: discord.Message = None, quiet: bool = False):
+        """Parse + log a single catch message and (optionally) reply with the outcome.
+
+        Returns one of: 'sent', 'skipped', 'invalid', 'error' (the last only set by caller on fetch failure).
+        """
+        catch_data = self.parse_poketwo_missingno_message(catch_message)
+        if not catch_data:
+            catch_data = self.parse_poketwo_milestone_message(catch_message)
+            if catch_data:
+                await self.send_to_milestone_starboard(ctx.guild, catch_data, original_message)
+                if not quiet:
+                    await ctx.reply(
+                        f"✅ Milestone catch sent to milestone starboard!\n"
+                        f"**Pokémon:** {catch_data['pokemon_name']} (Level {catch_data['level']}, {format_iv_display(catch_data['iv'])})\n"
+                        f"**Milestone:** {catch_data['milestone_count']:,}th caught",
+                        mention_author=False
+                    )
+                return 'sent'
+        if not catch_data:
+            catch_data = self.parse_poketwo_catch_message(catch_message)
+
+        if not catch_data:
+            if not quiet:
+                await ctx.reply("❌ Invalid message format. Please make sure it's a proper Poketwo catch message.", mention_author=False)
+            return 'invalid'
+
+        if not self.should_log_catch(catch_data):
+            if not quiet:
+                gender_emoji = get_gender_emoji(catch_data.get('gender'))
+                pokemon_display = f"{catch_data['pokemon_name']} {gender_emoji}" if gender_emoji else catch_data['pokemon_name']
+                iv_display = format_iv_display(catch_data['iv'])
+                await ctx.reply(
+                    f"❌ This catch doesn't meet starboard criteria.\n"
+                    f"**Pokémon:** {pokemon_display}\n"
+                    f"**Level:** {catch_data['level']}\n"
+                    f"**IV:** {iv_display}\n"
+                    f"**Shiny:** {'Yes' if catch_data['is_shiny'] else 'No'}\n"
+                    f"**Gigantamax:** {'Yes' if catch_data['is_gigantamax'] else 'No'}\n\n"
+                    f"**Criteria:** Shiny, Gigantamax, MissingNo, or IV ≥{HIGH_IV_THRESHOLD}% or ≤{LOW_IV_THRESHOLD}%",
+                    mention_author=False
+                )
+            return 'skipped'
+
+        await self.send_to_starboard_channels(ctx.guild, catch_data, original_message)
+
+        if not quiet:
+            criteria_met = []
+            if catch_data.get('message_type') == 'missingno':
+                criteria_met.append("❓ MissingNo.")
+                if catch_data['is_shiny']:
+                    criteria_met.append("✨ Shiny")
+            else:
+                if catch_data['is_shiny']:
+                    criteria_met.append("✨ Shiny")
+                if catch_data['is_gigantamax']:
+                    from config import Emojis
+                    criteria_met.append(f"{Emojis.GIGANTAMAX} Gigantamax")
+                iv = catch_data['iv']
+                if iv not in ["Hidden", "???"]:
+                    try:
+                        iv_value = float(iv)
+                        if iv_value >= HIGH_IV_THRESHOLD:
+                            criteria_met.append(f"📈 High IV ({iv}%)")
+                        elif iv_value <= LOW_IV_THRESHOLD:
+                            criteria_met.append(f"📉 Low IV ({iv}%)")
+                    except ValueError:
+                        pass
+
+            gender_emoji = get_gender_emoji(catch_data.get('gender'))
+            pokemon_display = f"{catch_data['pokemon_name']} {gender_emoji}" if gender_emoji else catch_data['pokemon_name']
+            iv_display = format_iv_display(catch_data['iv'])
+
+            await ctx.reply(
+                f"✅ Catch sent to starboard!\n"
+                f"**Criteria met:** {', '.join(criteria_met)}\n"
+                f"**Pokémon:** {pokemon_display} (Level {catch_data['level']}, {iv_display})",
+                mention_author=False
+            )
+        return 'sent'
+
     @commands.command(name="catchcheck", aliases=["cc", "checkcatch"])
     @commands.has_permissions(administrator=True)
     async def catch_check_command(self, ctx, *, input_data: str = None):
@@ -417,126 +525,75 @@ class StarboardCatch(commands.Cog):
         Usage:
             p!catchcheck (reply to a message)
             p!catchcheck <message_id>
+            p!catchcheck <message_id1> <message_id2> <message_id3> ...
             p!catchcheck Congratulations <@123>! You caught...
         """
-        original_message = None
-        catch_message = None
-        
+        # Reply-based invocation: single message only
         if input_data is None:
             if ctx.message.reference and ctx.message.reference.resolved:
-                catch_message = ctx.message.reference.resolved.content
                 original_message = ctx.message.reference.resolved
+                await self._process_catch(ctx, original_message.content, original_message)
             else:
                 await ctx.reply(
-                    "Please provide a Poketwo catch message, message ID, or reply to one.\n"
+                    "Please provide a Poketwo catch message, one or more message IDs, or reply to one.\n"
                     "Examples:\n"
                     "`p!catchcheck 123456789012345678` (message ID)\n"
+                    "`p!catchcheck 123456789012345678 234567890123456789` (multiple message IDs)\n"
                     "Or reply to a message with just `p!catchcheck`",
                     mention_author=False
                 )
-                return
-        else:
-            if input_data.strip().isdigit():
-                message_id = int(input_data.strip())
-                try:
-                    try:
-                        original_message = await ctx.channel.fetch_message(message_id)
-                    except discord.NotFound:
-                        found_message = None
-                        for channel in ctx.guild.text_channels:
-                            if channel.permissions_for(ctx.guild.me).read_message_history:
-                                try:
-                                    found_message = await channel.fetch_message(message_id)
-                                    original_message = found_message
-                                    break
-                                except (discord.NotFound, discord.Forbidden):
-                                    continue
-                        if not found_message:
-                            await ctx.reply(f"❌ Could not find message with ID `{message_id}` in this server.", mention_author=False)
-                            return
-                    
-                    catch_message = original_message.content
-                    if original_message.author.id != POKETWO_USER_ID:
-                        await ctx.reply(f"❌ The message with ID `{message_id}` is not from Poketwo.", mention_author=False)
-                        return
-                except ValueError:
-                    await ctx.reply(f"❌ Invalid message ID: `{input_data.strip()}`", mention_author=False)
-                    return
-                except Exception as e:
-                    await ctx.reply(f"❌ Error fetching message: {str(e)}", mention_author=False)
-                    return
-            else:
-                catch_message = input_data
-        
-        catch_data = self.parse_poketwo_missingno_message(catch_message)
-        if not catch_data:
-            catch_data = self.parse_poketwo_milestone_message(catch_message)
-            if catch_data:
-                await self.send_to_milestone_starboard(ctx.guild, catch_data, original_message)
-                await ctx.reply(
-                    f"✅ Milestone catch sent to milestone starboard!\n"
-                    f"**Pokémon:** {catch_data['pokemon_name']} (Level {catch_data['level']}, {format_iv_display(catch_data['iv'])})\n"
-                    f"**Milestone:** {catch_data['milestone_count']:,}th caught",
-                    mention_author=False
-                )
-                return
-        if not catch_data:
-            catch_data = self.parse_poketwo_catch_message(catch_message)
-
-        if not catch_data:
-            await ctx.reply("❌ Invalid message format. Please make sure it's a proper Poketwo catch message.", mention_author=False)
             return
 
-        if not self.should_log_catch(catch_data):
-            gender_emoji = get_gender_emoji(catch_data.get('gender'))
-            pokemon_display = f"{catch_data['pokemon_name']} {gender_emoji}" if gender_emoji else catch_data['pokemon_name']
-            iv_display = format_iv_display(catch_data['iv'])
-            await ctx.reply(
-                f"❌ This catch doesn't meet starboard criteria.\n"
-                f"**Pokémon:** {pokemon_display}\n"
-                f"**Level:** {catch_data['level']}\n"
-                f"**IV:** {iv_display}\n"
-                f"**Shiny:** {'Yes' if catch_data['is_shiny'] else 'No'}\n"
-                f"**Gigantamax:** {'Yes' if catch_data['is_gigantamax'] else 'No'}\n\n"
-                f"**Criteria:** Shiny, Gigantamax, MissingNo, or IV ≥{HIGH_IV_THRESHOLD}% or ≤{LOW_IV_THRESHOLD}%",
-                mention_author=False
+        tokens = input_data.split()
+
+        # All whitespace-separated tokens are digits -> treat as one or more message IDs
+        if tokens and all(t.isdigit() for t in tokens):
+            message_ids = [int(t) for t in tokens]
+
+            if len(message_ids) == 1:
+                original_message, catch_message, error = await self._resolve_catch_message(ctx, message_ids[0])
+                if error:
+                    await ctx.reply(error, mention_author=False)
+                    return
+                await self._process_catch(ctx, catch_message, original_message)
+                return
+
+            # Multiple IDs: resolve all first, then send oldest -> newest
+            counts = {'sent': 0, 'skipped': 0, 'invalid': 0, 'error': 0}
+            errors = []
+            resolved = []
+            for message_id in message_ids:
+                original_message, catch_message, error = await self._resolve_catch_message(ctx, message_id)
+                if error:
+                    counts['error'] += 1
+                    errors.append(f"`{message_id}`: {error.lstrip('❌ ')}")
+                    continue
+                resolved.append((original_message, catch_message))
+
+            # Oldest first, based on each message's actual timestamp
+            resolved.sort(key=lambda pair: pair[0].created_at)
+
+            for original_message, catch_message in resolved:
+                outcome = await self._process_catch(ctx, catch_message, original_message, quiet=True)
+                counts[outcome] += 1
+
+            summary = (
+                f"✅ Checked {len(message_ids)} message(s) (sent oldest → newest):\n"
+                f"**Sent to starboard:** {counts['sent']}\n"
+                f"**Didn't meet criteria:** {counts['skipped']}\n"
+                f"**Invalid/not a catch:** {counts['invalid']}\n"
+                f"**Errors:** {counts['error']}"
             )
+            if errors:
+                summary += "\n\n" + "\n".join(errors[:10])
+                if len(errors) > 10:
+                    summary += f"\n...and {len(errors) - 10} more."
+
+            await ctx.reply(summary, mention_author=False)
             return
-        
-        await self.send_to_starboard_channels(ctx.guild, catch_data, original_message)
-        
-        criteria_met = []
-        if catch_data.get('message_type') == 'missingno':
-            criteria_met.append("❓ MissingNo.")
-            if catch_data['is_shiny']:
-                criteria_met.append("✨ Shiny")
-        else:
-            if catch_data['is_shiny']:
-                criteria_met.append("✨ Shiny")
-            if catch_data['is_gigantamax']:
-                from config import Emojis
-                criteria_met.append(f"{Emojis.GIGANTAMAX} Gigantamax")
-            iv = catch_data['iv']
-            if iv not in ["Hidden", "???"]:
-                try:
-                    iv_value = float(iv)
-                    if iv_value >= HIGH_IV_THRESHOLD:
-                        criteria_met.append(f"📈 High IV ({iv}%)")
-                    elif iv_value <= LOW_IV_THRESHOLD:
-                        criteria_met.append(f"📉 Low IV ({iv}%)")
-                except ValueError:
-                    pass
-        
-        gender_emoji = get_gender_emoji(catch_data.get('gender'))
-        pokemon_display = f"{catch_data['pokemon_name']} {gender_emoji}" if gender_emoji else catch_data['pokemon_name']
-        iv_display = format_iv_display(catch_data['iv'])
-        
-        await ctx.reply(
-            f"✅ Catch sent to starboard!\n"
-            f"**Criteria met:** {', '.join(criteria_met)}\n"
-            f"**Pokémon:** {pokemon_display} (Level {catch_data['level']}, {iv_display})",
-            mention_author=False
-        )
+
+        # Otherwise treat input as a raw Poketwo catch message
+        await self._process_catch(ctx, input_data)
     
     @catch_check_command.error
     async def catch_check_error(self, ctx, error):
