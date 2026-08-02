@@ -177,6 +177,7 @@ async def on_ready():
         'cogs.model_control',
         'cogs.reserve',
         'cogs.eventextract',
+        'cogs.organize',
         'cogs.listgen',
     ]
 
