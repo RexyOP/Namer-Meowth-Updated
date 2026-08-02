@@ -448,30 +448,32 @@ class Organize(commands.Cog):
             await ctx.reply("❌ You don't have permission to repost the session.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
-        session = await self.db.get_active_organize_session_in_channel(ctx.channel.id)
+        session = await self.db.get_active_organize_session_in_guild(ctx.guild.id)
         if not session:
-            await ctx.reply("No active session in this channel.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            await ctx.reply("No active session in this server.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         session_id = str(session["_id"])
         spots = session["spots"]
 
         # Disable buttons on the old live message so only one message is
-        # ever clickable at a time.
+        # ever clickable at a time. It may be sitting in a different
+        # channel than the one this command was run in.
         if session.get("message_id"):
             try:
-                old_msg = await ctx.channel.fetch_message(session["message_id"])
+                old_channel = ctx.guild.get_channel(session["channel_id"]) or ctx.channel
+                old_msg = await old_channel.fetch_message(session["message_id"])
                 old_embed = build_session_embed(ctx.guild.name, session["template_name"], spots, status="moved")
                 disabled_view = OrganizeSessionView(self, session_id, spots, closed=True)
                 await old_msg.edit(embed=old_embed, view=disabled_view)
             except (discord.NotFound, discord.HTTPException):
                 pass
 
-        # Post the fresh, clickable copy
+        # Post the fresh, clickable copy — wherever this command was run
         new_embed = build_session_embed(ctx.guild.name, session["template_name"], spots)
         new_view = OrganizeSessionView(self, session_id, spots)
         new_msg = await ctx.send(embed=new_embed, view=new_view)
-        await self.db.set_organize_session_message(session_id, new_msg.id)
+        await self.db.set_organize_session_message(session_id, new_msg.id, channel_id=ctx.channel.id)
 
     # ------------------------------------------------------------------
     # Blacklisted roles — can't claim spots
@@ -570,9 +572,9 @@ class Organize(commands.Cog):
                 )
                 return
 
-        active = await self.db.get_active_organize_session_in_channel(ctx.channel.id)
+        active = await self.db.get_active_organize_session_in_guild(ctx.guild.id)
         if active:
-            await ctx.reply(f"❌ There's already an active session in this channel. Run `{ctx.prefix}og end` or `{ctx.prefix}og cancel` first.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            await ctx.reply(f"❌ There's already an active session in this server. Run `{ctx.prefix}og end` or `{ctx.prefix}og cancel` first.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         tmpl = await self.db.get_organize_template(ctx.guild.id, template_name)
@@ -609,9 +611,9 @@ class Organize(commands.Cog):
             await ctx.reply("❌ You don't have permission to end an organize session.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
-        session = await self.db.get_active_organize_session_in_channel(ctx.channel.id)
+        session = await self.db.get_active_organize_session_in_guild(ctx.guild.id)
         if not session:
-            await ctx.reply("❌ No active session in this channel.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            await ctx.reply("❌ No active session in this server.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         session_id = str(session["_id"])
@@ -656,9 +658,9 @@ class Organize(commands.Cog):
             await ctx.reply("❌ You don't have permission to cancel an organize session.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
-        session = await self.db.get_active_organize_session_in_channel(ctx.channel.id)
+        session = await self.db.get_active_organize_session_in_guild(ctx.guild.id)
         if not session:
-            await ctx.reply("❌ No active session in this channel.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            await ctx.reply("❌ No active session in this server.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         session_id = str(session["_id"])
