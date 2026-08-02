@@ -102,45 +102,107 @@ class StarboardUnbox(commands.Cog):
 
         return pokemon_found
 
+    def extract_milestone_pokemon_from_text(self, text: str) -> list:
+        """Extract Pokemon data from pokédex milestone reward messages.
+
+        These messages only tell us the Pokemon name (and whether it's shiny) -
+        there's no Level or IV info, e.g.:
+            "You've earned a **<:_:1242491442174361721> Original Magearna**!"
+            "You've earned a **<:_:1242491499279683646> ✨ Original Magearna**!"
+        """
+        pokemon_found = []
+
+        pattern = r'<:_:\d+>\s*(✨\s*)?([^*<]+?)\*\*'
+
+        for match in re.finditer(pattern, text):
+            is_shiny = bool(match.group(1))
+            pokemon_name = match.group(2).strip()
+
+            if not pokemon_name:
+                continue
+
+            is_gigantamax = pokemon_name.lower().startswith('gigantamax')
+
+            pokemon_found.append({
+                'pokemon_name': pokemon_name,
+                'level': '?',
+                'iv': '?',
+                'is_shiny': is_shiny,
+                'is_gigantamax': is_gigantamax,
+                'gender': None
+            })
+
+        return pokemon_found
+
+    def meets_starboard_criteria(self, pokemon_data: dict) -> bool:
+        """Whether a Pokemon (from either an unbox or a milestone message) is starboard-worthy"""
+        if pokemon_data.get('is_shiny') or pokemon_data.get('is_gigantamax'):
+            return True
+
+        try:
+            iv_value = float(pokemon_data.get('iv'))
+        except (TypeError, ValueError):
+            # Unknown IV (e.g. "?" from a milestone reward) can't qualify on IV alone
+            return False
+
+        return iv_value >= HIGH_IV_THRESHOLD or iv_value <= LOW_IV_THRESHOLD
+
+    @staticmethod
+    def format_iv(iv) -> str:
+        """Format an IV value for display, handling the unknown '?' case"""
+        if iv == '?' or iv is None:
+            return "?"
+        return f"{iv}%"
+
     def parse_poketwo_unbox_message(self, message: discord.Message, unboxed_by_id: int = None) -> list:
-        """Parse Poketwo box opening message to extract Pokemon information"""
+        """Parse a Poketwo box opening or pokédex milestone message to extract Pokemon information"""
         if not message.embeds:
             return []
 
         embed = message.embeds[0]
         pokemon_found = []
 
-        # Check if this is a box opening message
         title = embed.title or ""
 
         # Keywords for box opening messages
         opening_keywords = ['open', 'opening', 'box', 'chest', 'mystery', 'egg', 'eggs', 'bundle', 'puddle', 'rain', 'storm']
         is_opening_message = any(keyword.lower() in title.lower() for keyword in opening_keywords)
 
-        if not is_opening_message:
+        # Keywords for pokédex milestone reward messages (level/IV unknown, name + shiny only)
+        milestone_keywords = ['milestone', 'milestones']
+        is_milestone_message = any(keyword.lower() in title.lower() for keyword in milestone_keywords)
+
+        if not is_opening_message and not is_milestone_message:
             return []
+
+        if is_milestone_message:
+            extractor = self.extract_milestone_pokemon_from_text
+            message_type = 'milestone'
+        else:
+            extractor = self.extract_pokemon_from_text
+            message_type = 'unbox'
 
         # Try to extract Pokemon from description
         if embed.description:
-            pokemon_from_desc = self.extract_pokemon_from_text(embed.description)
+            pokemon_from_desc = extractor(embed.description)
             for pokemon_data in pokemon_from_desc:
                 pokemon_data['unboxed_by_id'] = unboxed_by_id
-                pokemon_data['message_type'] = 'unbox'
+                pokemon_data['message_type'] = message_type
                 pokemon_found.append(pokemon_data)
 
         # Try to extract Pokemon from all fields
         for field in embed.fields:
             if field.value:
-                pokemon_from_field = self.extract_pokemon_from_text(field.value)
+                pokemon_from_field = extractor(field.value)
                 for pokemon_data in pokemon_from_field:
                     pokemon_data['unboxed_by_id'] = unboxed_by_id
-                    pokemon_data['message_type'] = 'unbox'
+                    pokemon_data['message_type'] = message_type
                     pokemon_found.append(pokemon_data)
 
         return pokemon_found
 
     def create_unbox_embed(self, pokemon_data: dict, original_message: discord.Message = None) -> discord.Embed:
-        """Create embed for unbox"""
+        """Create embed for unbox (or, for milestone rewards, a black embed with Level/IV shown as '?')"""
         pokemon_name = pokemon_data['pokemon_name']
         level = pokemon_data['level']
         iv = pokemon_data['iv']
@@ -148,9 +210,10 @@ class StarboardUnbox(commands.Cog):
         is_gigantamax = pokemon_data['is_gigantamax']
         gender = pokemon_data.get('gender')
         unboxed_by_id = pokemon_data.get('unboxed_by_id')
+        is_milestone = pokemon_data.get('message_type') == 'milestone'
 
-        # Format IV
-        iv_display = f"{iv}%"
+        # Format IV (milestone rewards only ever know "?")
+        iv_display = self.format_iv(iv)
 
         # Get gender emoji
         gender_emoji = get_gender_emoji(gender)
@@ -164,7 +227,9 @@ class StarboardUnbox(commands.Cog):
         # Get Pokemon image URL
         image_url = find_pokemon_image_url(pokemon_name, is_shiny, gender, is_gigantamax)
 
-        embed = discord.Embed(color=EMBED_COLOR, timestamp=datetime.utcnow())
+        # Milestone rewards get a dedicated black embed since we only know the name + shiny status
+        embed_color = 0x000000 if is_milestone else EMBED_COLOR
+        embed = discord.Embed(color=embed_color, timestamp=datetime.utcnow())
 
         # Determine title based on criteria
         title_parts = []
@@ -175,20 +240,22 @@ class StarboardUnbox(commands.Cog):
         if is_gigantamax:
             title_parts.append(f"{Emojis.GIGANTAMAX} Gigantamax")
 
-        # Check IV
-        try:
-            iv_value = float(iv)
-            if iv_value >= HIGH_IV_THRESHOLD:
-                title_parts.append("📈 High IV")
-            elif iv_value <= LOW_IV_THRESHOLD:
-                title_parts.append("📉 Low IV")
-        except ValueError:
-            pass
+        # Check IV (not applicable for milestone rewards - level/IV are unknown)
+        if not is_milestone:
+            try:
+                iv_value = float(iv)
+                if iv_value >= HIGH_IV_THRESHOLD:
+                    title_parts.append("📈 High IV")
+                elif iv_value <= LOW_IV_THRESHOLD:
+                    title_parts.append("📉 Low IV")
+            except ValueError:
+                pass
 
+        label = "Milestone Reward" if is_milestone else "Rare Unbox"
         if title_parts:
-            embed.title = f"{Emojis.GIFTBOX} " + " ".join(title_parts) + f" Unbox Detected {Emojis.GIFTBOX}"
+            embed.title = f"{Emojis.GIFTBOX} " + " ".join(title_parts) + f" {label} Detected {Emojis.GIFTBOX}"
         else:
-            embed.title = f"{Emojis.GIFTBOX} Rare Unbox Detected {Emojis.GIFTBOX}"
+            embed.title = f"{Emojis.GIFTBOX} {label} Detected {Emojis.GIFTBOX}"
 
         # Description
         base_description = f"**Pokémon:** {pokemon_display}\n**Level:** {level}\n**IV:** {iv_display}"
@@ -212,8 +279,8 @@ class StarboardUnbox(commands.Cog):
             is_gigantamax = pokemon_data['is_gigantamax']
             iv = pokemon_data['iv']
 
-            # Check if this Pokemon meets starboard criteria
-            if not (is_shiny or is_gigantamax or iv >= HIGH_IV_THRESHOLD or iv <= LOW_IV_THRESHOLD):
+            # Check if this Pokemon meets starboard criteria (handles unknown '?' IV from milestones)
+            if not self.meets_starboard_criteria(pokemon_data):
                 continue
 
             # Determine which channels to send to
@@ -288,9 +355,10 @@ class StarboardUnbox(commands.Cog):
         embed = message.embeds[0]
         title = embed.title or ""
         opening_keywords = ['open', 'opening', 'box', 'chest', 'mystery', 'egg', 'eggs', 'bundle', 'puddle', 'rain', 'storm']
-        if not any(kw.lower() in title.lower() for kw in opening_keywords):
+        milestone_keywords = ['milestone', 'milestones']
+        if not any(kw.lower() in title.lower() for kw in opening_keywords + milestone_keywords):
             await interaction.response.send_message(
-                "❌ This doesn't look like a box opening message.",
+                "❌ This doesn't look like a box opening or milestone reward message.",
                 ephemeral=True
             )
             return
@@ -304,10 +372,7 @@ class StarboardUnbox(commands.Cog):
             await interaction.followup.send("❌ Couldn't parse any Pokémon from that message.")
             return
 
-        qualifying_pokemon = [
-            p for p in pokemon_list
-            if p['is_shiny'] or p['is_gigantamax'] or p['iv'] >= HIGH_IV_THRESHOLD or p['iv'] <= LOW_IV_THRESHOLD
-        ]
+        qualifying_pokemon = [p for p in pokemon_list if self.meets_starboard_criteria(p)]
 
         # --- Build DM content ---
         if not qualifying_pokemon:
@@ -315,7 +380,7 @@ class StarboardUnbox(commands.Cog):
             for p in pokemon_list:
                 ge = get_gender_emoji(p.get('gender'))
                 display = f"{p['pokemon_name']} {ge}".strip()
-                pokemon_summary.append(f"**{display}** (Lvl {p['level']}, {p['iv']}%)")
+                pokemon_summary.append(f"**{display}** (Lvl {p['level']}, {self.format_iv(p['iv'])})")
 
             dm_lines = [
                 f"📦 **Box Check** — no starboard-worthy Pokémon found.\n",
@@ -438,13 +503,9 @@ class StarboardUnbox(commands.Cog):
         all_pokemon_data = []
 
         for pokemon_data in pokemon_list:
-            is_shiny = pokemon_data['is_shiny']
-            is_gigantamax = pokemon_data['is_gigantamax']
-            iv = pokemon_data['iv']
-
             all_pokemon_data.append(pokemon_data)
 
-            if is_shiny or is_gigantamax or iv >= HIGH_IV_THRESHOLD or iv <= LOW_IV_THRESHOLD:
+            if self.meets_starboard_criteria(pokemon_data):
                 qualifying_pokemon.append(pokemon_data)
 
         # Send results to DMs
@@ -497,7 +558,7 @@ class StarboardUnbox(commands.Cog):
 
                     pokemon_details.append(
                         f"**{pokemon_display}**{f' {indicators}' if indicators else ''}\n"
-                        f"Level {pokemon_data['level']} • IV: {pokemon_data['iv']}%"
+                        f"Level {pokemon_data['level']} • IV: {self.format_iv(pokemon_data['iv'])}"
                     )
 
                 all_pokemon_embed.description = "\n".join(pokemon_details)
@@ -518,7 +579,7 @@ class StarboardUnbox(commands.Cog):
                 for pokemon_data in all_pokemon_data:
                     gender_emoji = get_gender_emoji(pokemon_data.get('gender'))
                     pokemon_display = f"{pokemon_data['pokemon_name']} {gender_emoji}" if gender_emoji else pokemon_data['pokemon_name']
-                    pokemon_summary.append(f"**{pokemon_display}** (Level {pokemon_data['level']}, {pokemon_data['iv']}%)")
+                    pokemon_summary.append(f"**{pokemon_display}** (Level {pokemon_data['level']}, {self.format_iv(pokemon_data['iv'])})")
 
                 summary_text = "\n".join(pokemon_summary) if pokemon_summary else "No Pokemon found"
                 await ctx.reply(
@@ -541,10 +602,14 @@ class StarboardUnbox(commands.Cog):
                         criteria_met.append("✨ Shiny")
                     if pokemon_data['is_gigantamax']:
                         criteria_met.append(f"{Emojis.GIGANTAMAX} Gigantamax")
-                    if pokemon_data['iv'] >= HIGH_IV_THRESHOLD:
-                        criteria_met.append(f"📈 High IV ({pokemon_data['iv']}%)")
-                    elif pokemon_data['iv'] <= LOW_IV_THRESHOLD:
-                        criteria_met.append(f"📉 Low IV ({pokemon_data['iv']}%)")
+                    try:
+                        iv_value = float(pokemon_data['iv'])
+                        if iv_value >= HIGH_IV_THRESHOLD:
+                            criteria_met.append(f"📈 High IV ({pokemon_data['iv']}%)")
+                        elif iv_value <= LOW_IV_THRESHOLD:
+                            criteria_met.append(f"📉 Low IV ({pokemon_data['iv']}%)")
+                    except (TypeError, ValueError):
+                        pass
 
                     criteria_text = ", ".join(criteria_met)
                     gender_emoji = get_gender_emoji(pokemon_data.get('gender'))
@@ -582,11 +647,12 @@ class StarboardUnbox(commands.Cog):
         embed = message.embeds[0]
         title = embed.title or ""
 
-        # Check for opening keywords
+        # Check for opening keywords or pokédex milestone reward keywords
         opening_keywords = ['open', 'opening', 'box', 'chest', 'mystery', 'egg', 'eggs', 'bundle', 'puddle', 'supply', 'crate', 'crates', 'rain', 'storm']
-        is_opening_message = any(keyword.lower() in title.lower() for keyword in opening_keywords)
+        milestone_keywords = ['milestone', 'milestones']
+        is_relevant_message = any(keyword.lower() in title.lower() for keyword in opening_keywords + milestone_keywords)
 
-        if not is_opening_message:
+        if not is_relevant_message:
             return
 
         # Get unboxed user
@@ -596,15 +662,8 @@ class StarboardUnbox(commands.Cog):
         if not pokemon_list:
             return
 
-        # Filter Pokemon that meet criteria
-        qualifying_pokemon = []
-        for pokemon_data in pokemon_list:
-            is_shiny = pokemon_data['is_shiny']
-            is_gigantamax = pokemon_data['is_gigantamax']
-            iv = pokemon_data['iv']
-
-            if is_shiny or is_gigantamax or iv >= HIGH_IV_THRESHOLD or iv <= LOW_IV_THRESHOLD:
-                qualifying_pokemon.append(pokemon_data)
+        # Filter Pokemon that meet criteria (handles unknown '?' IV from milestone rewards)
+        qualifying_pokemon = [p for p in pokemon_list if self.meets_starboard_criteria(p)]
 
         if qualifying_pokemon:
             await self.send_to_starboard_channels(message.guild, qualifying_pokemon, message)
