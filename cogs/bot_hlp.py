@@ -16,7 +16,7 @@ class Help(commands.Cog):
     async def help_command(self, ctx, category: str = None):
         """Show help information
 
-        Categories: collection, category, hunt, pings, settings, roles, prediction, starboard, helpful, eventextract, incense, captcha, reserve, channels, listgen, owner, all
+        Categories: collection, category, hunt, pings, settings, roles, prediction, starboard, helpful, eventextract, incense, captcha, reserve, organize, channels, listgen, owner, all
         """
         prefix = BOT_PREFIX[0]
         is_owner = await self.bot.is_owner(ctx.author)
@@ -40,6 +40,7 @@ class Help(commands.Cog):
             embed.add_field(name="🔥 Incense",          value=f"`{prefix}help incense` — Manage Poketwo incense sessions",                 inline=False)
             embed.add_field(name="🔐 Captcha",          value=f"`{prefix}help captcha` — Captcha alert information",                       inline=False)
             embed.add_field(name="💾 Reserve",          value=f"`{prefix}help reserve` — Server-specific Pokémon reservation system",      inline=False)
+            embed.add_field(name="🗂️ Organize",         value=f"`{prefix}help organize` — Claimable-spot events that feed into reserves",  inline=False)
             embed.add_field(name="📝 List Builder",      value=f"`{prefix}help listgen` — Build and export Pokémon name lists",              inline=False)
             if is_owner:
                 embed.add_field(name="👑 Owner",        value=f"`{prefix}help owner` — Bot owner commands",                               inline=False)
@@ -762,6 +763,57 @@ class Help(commands.Cog):
                 inline=False,
             )
 
+        # ── Organize ──────────────────────────────────────────────────
+        elif category in ["organize", "og", "event"]:
+            embed = discord.Embed(
+                title="🗂️ Organize Commands",
+                description=(
+                    "Post a claimable list of spots (Pokémon or categories, with optional prices). "
+                    "Anyone can click a button to claim a spot; when the event's done, an admin commits "
+                    "every claim straight into that user's reserves."
+                ),
+                color=EMBED_COLOR,
+            )
+            embed.add_field(
+                name="👆 Everyone",
+                value="Click a spot's button to claim it • click again to release it",
+                inline=False,
+            )
+            embed.add_field(
+                name="📐 Admin: Templates",
+                value=(
+                    f"`{prefix}og template create <name>` *(spots on the following lines)*\n"
+                    f"`{prefix}og template edit <name>` • `{prefix}og template delete <name>`\n"
+                    f"`{prefix}og template view <name>` • `{prefix}og template list`\n"
+                    f"`{prefix}og template setdefault <name>` — used by `{prefix}og start` with no argument"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="🚀 Admin: Running an Event",
+                value=(
+                    f"`{prefix}og start [template]` — post the claim embed\n"
+                    f"`{prefix}og view` — repost at the bottom of chat, old message's buttons disabled\n"
+                    f"`{prefix}og end` — commit every claim to reserves, close the embed\n"
+                    f"`{prefix}og cancel` — close without touching reserves"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="🚫 Admin: Blacklist",
+                value=f"`{prefix}og blacklist` • `{prefix}og blacklist add @role` • `{prefix}og blacklist remove @role` • `{prefix}og blacklist clear`",
+                inline=False,
+            )
+            embed.add_field(
+                name="💡 Spot format",
+                value=(
+                    "One spot per line: `pokemon | <name>` or `category | <name>`, optional `| <price>` at the end.\n"
+                    "e.g. `pokemon | Pride Pyroar | 250k pc` — a shared event name like `Pride Vivillon` "
+                    f"auto-expands to every Pokémon using it, same as `{prefix}r add`."
+                ),
+                inline=False,
+            )
+
         # ── All commands ──────────────────────────────────────────────
         elif category in ["listgen", "lg", "listbuilder", "list"]:
             embed = discord.Embed(
@@ -947,6 +999,15 @@ class Help(commands.Cog):
                 inline=False,
             )
             embed.add_field(
+                name="🗂️ Organize",
+                value=(
+                    f"Everyone: click buttons to claim/release spots\n"
+                    f"**Admin:** `{prefix}og template create/edit/delete/view/list` • `{prefix}og start [template]` • "
+                    f"`{prefix}og view` • `{prefix}og end` • `{prefix}og cancel` • `{prefix}og blacklist add/remove/clear`"
+                ),
+                inline=False,
+            )
+            embed.add_field(
                 name="📝 List Builder",
                 value=(
                     f"`{prefix}listgen` / `{prefix}lg` / `{prefix}listbuilder`\n"
@@ -983,7 +1044,7 @@ class Help(commands.Cog):
             await ctx.reply(
                 f"❌ Unknown category: `{category}`\n"
                 f"Available: `collection`, `category`, `hunt`, `pings`, `settings`, `roles`, `channels`, "
-                f"`prediction`, `starboard`, `helpful`, `eventextract`, `incense`, `captcha`, `reserve`, `listgen`, "
+                f"`prediction`, `starboard`, `helpful`, `eventextract`, `incense`, `captcha`, `reserve`, `organize`, `listgen`, "
                 f"{'`owner`, ' if is_owner else ''}`all`\n"
                 f"Use `{prefix}help` to see the main help menu.",
                 mention_author=False,
@@ -1015,7 +1076,8 @@ class Help(commands.Cog):
                 "• ⭐ **Starboard Logging** — Log rare catches, hatches, and unboxes\n"
                 "• 🔕 **AFK Mode** — Disable pings when you're away\n"
                 "• 🏷️ **Best Name** — Optionally show shortest known name per prediction\n"
-                "• 📥 **Event Extract** — Export event Pokémon data straight from Pokétwo embeds"
+                "• 📥 **Event Extract** — Export event Pokémon data straight from Pokétwo embeds\n"
+                "• 🗂️ **Organize Events** — Claimable-spot embeds that feed straight into reserves"
             ),
             inline=False,
         )
@@ -1082,7 +1144,7 @@ class Help(commands.Cog):
     # Slash Commands
     # ------------------------------------------------------------------
     @app_commands.command(name="help", description="Show help information for the bot")
-    @app_commands.describe(category="Category: collection, category, hunt, pings, settings, roles, channels, prediction, starboard, helpful, eventextract, incense, captcha, reserve, listgen, all")
+    @app_commands.describe(category="Category: collection, category, hunt, pings, settings, roles, channels, prediction, starboard, helpful, eventextract, incense, captcha, reserve, organize, listgen, all")
     async def slash_help(self, interaction: discord.Interaction, category: str = None):
         ctx = await commands.Context.from_interaction(interaction)
         await self.help_command(ctx, category=category)
