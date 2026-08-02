@@ -1,6 +1,7 @@
 """Database operations and connection management"""
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import ReturnDocument
 from typing import List, Optional
 from config import MONGODB_URI, DB_TIMEOUT_MS, DB_MAX_POOL_SIZE, DB_MIN_POOL_SIZE
 
@@ -898,3 +899,55 @@ class Database:
         await self.db.reserve_allowed_roles.delete_one({"guild_id": guild_id})
         if self.gcache:
             self.gcache.invalidate_reserve_roles(guild_id)
+
+    # -------------------------------------------------------------------------
+    # Shiny count (per guild)
+    # -------------------------------------------------------------------------
+    async def get_shiny_count(self, guild_id: int) -> int:
+        """Get the current shiny catch count for a guild (default: 0)."""
+        settings = await self.db.guild_settings.find_one({"guild_id": guild_id})
+        return settings.get('shiny_count', 0) if settings else 0
+
+    async def set_shiny_count(self, guild_id: int, count: int):
+        """Manually set the shiny catch count for a guild."""
+        await self.db.guild_settings.update_one(
+            {"guild_id": guild_id},
+            {"$set": {"shiny_count": count}},
+            upsert=True
+        )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+
+    async def increment_shiny_count(self, guild_id: int, amount: int = 1) -> int:
+        """Atomically increment the shiny catch count for a guild and return the new value."""
+        result = await self.db.guild_settings.find_one_and_update(
+            {"guild_id": guild_id},
+            {"$inc": {"shiny_count": amount}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER
+        )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+        return result.get('shiny_count', amount)
+
+    async def set_shiny_count_channel(self, guild_id: int, channel_id: Optional[int]):
+        """Set or clear the channel that gets renamed to reflect the shiny count."""
+        if channel_id is None:
+            await self.db.guild_settings.update_one(
+                {"guild_id": guild_id},
+                {"$unset": {"shiny_count_channel_id": ""}},
+                upsert=True
+            )
+        else:
+            await self.db.guild_settings.update_one(
+                {"guild_id": guild_id},
+                {"$set": {"shiny_count_channel_id": channel_id}},
+                upsert=True
+            )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+
+    async def get_shiny_count_channel(self, guild_id: int) -> Optional[int]:
+        """Get the shiny-count auto-rename channel ID for a guild, or None if not set."""
+        settings = await self.db.guild_settings.find_one({"guild_id": guild_id})
+        return settings.get('shiny_count_channel_id') if settings else None
