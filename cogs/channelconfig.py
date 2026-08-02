@@ -107,6 +107,14 @@ class ChannelConfig(commands.Cog):
             inline=False,
         )
         embed.add_field(
+            name="✨ Shiny Count  *(Admin)*",
+            value=(
+                f"`{p}channel shinycount [#ch]` — channel auto-renamed with the live shiny count\n"
+                f"(also: `{p}sc channel [#ch]`, `{p}sc edit <count>`)"
+            ),
+            inline=False,
+        )
+        embed.add_field(
             name="👑 Owner-Only",
             value=(
                 f"`{p}channel lowpred #ch` — global low-confidence prediction log\n"
@@ -398,6 +406,47 @@ class ChannelConfig(commands.Cog):
             await ctx.reply("❌ Invalid channel. Mention a text channel or use its ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ══════════════════════════════════════════════════════════════════
+    # p!channel shinycount [#channel]   (Admin only)
+    # ══════════════════════════════════════════════════════════════════
+
+    @channel_group.command(name="shinycount", aliases=["sc", "shiny-count"])
+    @commands.has_permissions(administrator=True)
+    async def channel_shinycount_cmd(self, ctx, channel: discord.TextChannel = None):
+        """Set or clear the channel that auto-renames itself with the shiny count (Admin only).
+
+        The channel's name will have its trailing "-<number>" swapped for the
+        current shiny count every time a shiny is caught — everything before
+        it (emojis, symbols, text) is left untouched.
+
+        Examples:
+            p!channel shinycount #shiny-starboard   → set the channel
+            p!channel shinycount                     → clear (disables auto-renaming)
+        """
+        if channel is None:
+            await self.db.set_shiny_count_channel(ctx.guild.id, None)
+            embed = discord.Embed(
+                description="🔕 Shiny count channel cleared. Auto-renaming is now **disabled** for this server.",
+                color=EMBED_COLOR,
+            )
+        else:
+            await self.db.set_shiny_count_channel(ctx.guild.id, channel.id)
+            embed = discord.Embed(
+                description=(
+                    f"✅ Shiny count channel set to {channel.mention}.\n"
+                    "Its name will update with the current shiny count on every shiny catch."
+                ),
+                color=EMBED_COLOR,
+            )
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @channel_shinycount_cmd.error
+    async def channel_shinycount_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        elif isinstance(error, commands.BadArgument):
+            await ctx.reply("❌ Invalid channel. Mention a text channel or use its ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    # ══════════════════════════════════════════════════════════════════
     # p!channel lowpred #channel   (bot owner only)
     # ══════════════════════════════════════════════════════════════════
 
@@ -473,9 +522,9 @@ class ChannelConfig(commands.Cog):
             ch_id = settings.get(key)
             return f"<#{ch_id}>" if ch_id else "Not set"
 
-        # ── Captcha ────────────────────────────────────────────────────
+        # ── Captcha / Shiny Count ────────────────────────────────────────
         embed.add_field(name="🔐 Captcha Alerts", value=_val("captcha_channel_id"), inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+        embed.add_field(name="✨ Shiny Count Channel", value=_val("shiny_count_channel_id"), inline=True)
         embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
 
         # ── Starboard ──────────────────────────────────────────────────
