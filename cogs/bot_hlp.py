@@ -312,6 +312,11 @@ class Help(commands.Cog):
                 inline=False,
             )
             embed.add_field(
+                name=f"✨ `{prefix}channel shinycount [#ch]` — Shiny Count Channel  *(Admin)*",
+                value=f"Same as `{prefix}sc channel` — sets the channel that auto-renames with the live shiny count.",
+                inline=False,
+            )
+            embed.add_field(
                 name=f"🔐 `{prefix}channel captcha [#ch]` — Captcha Alerts  *(Admin)*",
                 value=(
                     f"• `{prefix}channel captcha #alerts` — set captcha alert channel\n"
@@ -451,7 +456,18 @@ class Help(commands.Cog):
                 name="🔍 Manual Checking  *(Admin)*",
                 value=(
                     f"`{prefix}catchcheck` • `{prefix}eggcheck` • `{prefix}unboxcheck`\n"
-                    "Reply to a message or provide a message ID."
+                    "Reply to a message, provide a message ID, or provide several IDs at once "
+                    f"(e.g. `{prefix}catchcheck 123... 456... 789...`) — sent oldest to newest."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name=f"✨ Shiny Count — `{prefix}sc` / `{prefix}shinycount`",
+                value=(
+                    f"`{prefix}sc` — view this server's shiny count\n"
+                    f"`{prefix}sc edit <count>` — manually set the count  *(Admin)*\n"
+                    f"`{prefix}sc channel [#ch | id]` — set/clear the channel that auto-renames with the count  *(Admin)*\n"
+                    "Count only increments from real, auto-detected shiny catches — `catchcheck` never affects it."
                 ),
                 inline=False,
             )
@@ -942,7 +958,12 @@ class Help(commands.Cog):
             )
             embed.add_field(
                 name="🔍 Starboard Manual Check  *(Admin)*",
-                value=f"`{prefix}catchcheck` • `{prefix}eggcheck` • `{prefix}unboxcheck`",
+                value=f"`{prefix}catchcheck` • `{prefix}eggcheck` • `{prefix}unboxcheck` (supports multiple message IDs)",
+                inline=False,
+            )
+            embed.add_field(
+                name="✨ Shiny Count",
+                value=f"`{prefix}sc` • `{prefix}sc edit <count>` *(Admin)* • `{prefix}sc channel [#ch]` *(Admin)*",
                 inline=False,
             )
             if is_owner:
