@@ -572,5 +572,14 @@ class StarboardCatch(commands.Cog):
         if self.should_log_catch(catch_data):
             await self.send_to_starboard_channels(message.guild, catch_data, message)
 
+            # Real, auto-detected shiny catch — bump the shiny count and
+            # (if configured) rename the shiny-count channel. Deliberately
+            # NOT called from catch_check_command, so p!catchcheck previews
+            # never affect the count.
+            if catch_data.get('is_shiny'):
+                shiny_count_cog = self.bot.get_cog('ShinyCount')
+                if shiny_count_cog:
+                    await shiny_count_cog.record_shiny_catch(message.guild)
+
 async def setup(bot):
     await bot.add_cog(StarboardCatch(bot))
