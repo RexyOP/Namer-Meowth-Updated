@@ -2,6 +2,9 @@
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ReturnDocument
+from bson import ObjectId
+from bson.errors import InvalidId
+from datetime import datetime, timezone
 from typing import List, Optional
 from config import MONGODB_URI, DB_TIMEOUT_MS, DB_MAX_POOL_SIZE, DB_MIN_POOL_SIZE
 
@@ -87,6 +90,13 @@ class Database:
 
             # Unified user prefs AFK (type/region AFK stored in a single user_prefs collection)
             await self.db.user_prefs.create_index("user_id", unique=True)
+
+            # Organize templates — reusable spot layouts, per-guild
+            await self.db.organize_templates.create_index([("guild_id", 1), ("name_lower", 1)], unique=True)
+
+            # Organize sessions — a live "organize" event posted with buttons
+            await self.db.organize_sessions.create_index([("guild_id", 1), ("channel_id", 1)])
+            await self.db.organize_sessions.create_index("status")
 
             print("✅ Database indexes created")
         except Exception as e:
@@ -951,3 +961,145 @@ class Database:
         """Get the shiny-count auto-rename channel ID for a guild, or None if not set."""
         settings = await self.db.guild_settings.find_one({"guild_id": guild_id})
         return settings.get('shiny_count_channel_id') if settings else None
+
+    # -------------------------------------------------------------------------
+    # Organize templates — reusable spot layouts (pokemon/category + price)
+    # -------------------------------------------------------------------------
+    async def create_organize_template(self, guild_id: int, name: str, spots: List[dict], created_by: int):
+        """Create a new organize template. `spots` is a list of
+        {label, type, value, price} dicts (see organize.py for shape)."""
+        await self.db.organize_templates.insert_one({
+            "guild_id": guild_id,
+            "name": name,
+            "name_lower": name.lower(),
+            "spots": spots,
+            "created_by": created_by,
+            "created_at": datetime.now(timezone.utc),
+        })
+
+    async def get_organize_template(self, guild_id: int, name: str) -> Optional[dict]:
+        return await self.db.organize_templates.find_one({
+            "guild_id": guild_id,
+            "name_lower": name.lower(),
+        })
+
+    async def get_all_organize_templates(self, guild_id: int) -> List[dict]:
+        """Return all templates for a guild: [{name, spots}, ...]"""
+        return await self.db.organize_templates.find(
+            {"guild_id": guild_id},
+            {"name": 1, "spots": 1, "_id": 0}
+        ).to_list(length=None)
+
+    async def update_organize_template(self, guild_id: int, name: str, spots: List[dict]) -> bool:
+        result = await self.db.organize_templates.update_one(
+            {"guild_id": guild_id, "name_lower": name.lower()},
+            {"$set": {"spots": spots}}
+        )
+        return result.matched_count > 0
+
+    async def delete_organize_template(self, guild_id: int, name: str) -> bool:
+        result = await self.db.organize_templates.delete_one({
+            "guild_id": guild_id,
+            "name_lower": name.lower(),
+        })
+        return result.deleted_count > 0
+
+    # -------------------------------------------------------------------------
+    # Organize sessions — a live posted "organize" embed with claimable spots
+    # -------------------------------------------------------------------------
+    async def create_organize_session(
+        self, guild_id: int, channel_id: int, template_name: str,
+        spots: List[dict], created_by: int
+    ) -> str:
+        """Insert a new active session (message_id set later via
+        set_organize_session_message once the message is posted, since the
+        session id is needed to build the message's button custom_ids).
+        Returns the new session's id as a string."""
+        result = await self.db.organize_sessions.insert_one({
+            "guild_id": guild_id,
+            "channel_id": channel_id,
+            "message_id": None,
+            "template_name": template_name,
+            "spots": spots,
+            "status": "active",
+            "created_by": created_by,
+            "created_at": datetime.now(timezone.utc),
+        })
+        return str(result.inserted_id)
+
+    async def set_organize_session_message(self, session_id: str, message_id: int):
+        try:
+            oid = ObjectId(session_id)
+        except InvalidId:
+            return
+        await self.db.organize_sessions.update_one(
+            {"_id": oid}, {"$set": {"message_id": message_id}}
+        )
+
+    async def get_organize_session(self, session_id: str) -> Optional[dict]:
+        try:
+            oid = ObjectId(session_id)
+        except InvalidId:
+            return None
+        return await self.db.organize_sessions.find_one({"_id": oid})
+
+    async def get_active_organize_session_in_channel(self, channel_id: int) -> Optional[dict]:
+        return await self.db.organize_sessions.find_one({
+            "channel_id": channel_id, "status": "active"
+        })
+
+    async def get_all_active_organize_sessions(self) -> List[dict]:
+        """Used on bot startup to re-register persistent button views."""
+        return await self.db.organize_sessions.find({"status": "active"}).to_list(length=None)
+
+    async def set_organize_session_spot(
+        self, session_id: str, index: int,
+        reserved_by: Optional[int], reserved_name: Optional[str]
+    ) -> bool:
+        try:
+            oid = ObjectId(session_id)
+        except InvalidId:
+            return False
+        result = await self.db.organize_sessions.update_one(
+            {"_id": oid},
+            {"$set": {
+                f"spots.{index}.reserved_by": reserved_by,
+                f"spots.{index}.reserved_name": reserved_name,
+            }}
+        )
+        return result.matched_count > 0
+
+    async def set_organize_session_status(self, session_id: str, status: str) -> bool:
+        try:
+            oid = ObjectId(session_id)
+        except InvalidId:
+            return False
+        result = await self.db.organize_sessions.update_one(
+            {"_id": oid}, {"$set": {"status": status}}
+        )
+        return result.matched_count > 0
+
+    # -------------------------------------------------------------------------
+    # Organize — default template per guild
+    # -------------------------------------------------------------------------
+    async def set_default_organize_template(self, guild_id: int, name: str):
+        await self.db.guild_settings.update_one(
+            {"guild_id": guild_id},
+            {"$set": {"default_organize_template": name}},
+            upsert=True
+        )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+
+    async def get_default_organize_template(self, guild_id: int) -> Optional[str]:
+        settings = await self.db.guild_settings.find_one({"guild_id": guild_id})
+        return settings.get('default_organize_template') if settings else None
+
+    async def clear_default_organize_template(self, guild_id: int):
+        await self.db.guild_settings.update_one(
+            {"guild_id": guild_id},
+            {"$unset": {"default_organize_template": ""}},
+            upsert=True
+        )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
