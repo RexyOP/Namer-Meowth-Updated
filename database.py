@@ -1079,6 +1079,17 @@ class Database:
         )
         return result.matched_count > 0
 
+    async def delete_organize_session(self, session_id: str) -> bool:
+        """Remove a session doc entirely. Called once a session is
+        ended/cancelled and its message updated — nothing further needs
+        that state since committed spots already live in `reserves`."""
+        try:
+            oid = ObjectId(session_id)
+        except InvalidId:
+            return False
+        result = await self.db.organize_sessions.delete_one({"_id": oid})
+        return result.deleted_count > 0
+
     # -------------------------------------------------------------------------
     # Organize — default template per guild
     # -------------------------------------------------------------------------
