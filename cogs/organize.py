@@ -261,7 +261,7 @@ class Organize(commands.Cog):
             name="🚀 Running an event (admin/allowed-role only)",
             value=(
                 f"`{p}og start [template]` — posts the claim embed (uses the default template if omitted)\n"
-                f"`{p}og view` — snapshot of the current session's claims, without scrolling to find it\n"
+                f"`{p}og view` — reposts the claim embed at the bottom of chat; disables the old message's buttons\n"
                 f"`{p}og end` — commits every claimed spot to reserves, closes the embed\n"
                 f"`{p}og cancel` — closes the embed without touching reserves"
             ),
@@ -429,19 +429,39 @@ class Organize(commands.Cog):
         await self.db.set_default_organize_template(ctx.guild.id, tmpl["name"])
         await ctx.reply(f"⭐ **{tmpl['name']}** is now the default — `{ctx.prefix}og start` will use it.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
-    @organize_group.command(name="view", aliases=["status"])
+    @organize_group.command(name="view", aliases=["status", "refresh", "bump"])
     async def organize_view(self, ctx):
-        """Show the current state of this channel's active session (a fresh snapshot, read-only)."""
+        """Repost the live claim embed at the bottom of the channel — handy in
+        a busy chat. The old message's buttons get disabled; the new one
+        becomes the one people click going forward."""
+        if not await self._has_permission(ctx):
+            await ctx.reply("❌ You don't have permission to repost the session.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
         session = await self.db.get_active_organize_session_in_channel(ctx.channel.id)
         if not session:
             await ctx.reply("No active session in this channel.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
-        embed = build_session_embed(ctx.guild.name, session["template_name"], session["spots"])
-        embed.title = "📸 " + embed.title  # distinguish from the live message
-        jump = f"\n\n[Jump to live message](https://discord.com/channels/{ctx.guild.id}/{session['channel_id']}/{session['message_id']})" if session.get("message_id") else ""
-        if jump:
-            embed.description = (embed.description or "") + jump
-        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
+
+        session_id = str(session["_id"])
+        spots = session["spots"]
+
+        # Disable buttons on the old live message so only one message is
+        # ever clickable at a time.
+        if session.get("message_id"):
+            try:
+                old_msg = await ctx.channel.fetch_message(session["message_id"])
+                old_embed = build_session_embed(ctx.guild.name, session["template_name"], spots, status="moved")
+                disabled_view = OrganizeSessionView(self, session_id, spots, closed=True)
+                await old_msg.edit(embed=old_embed, view=disabled_view)
+            except (discord.NotFound, discord.HTTPException):
+                pass
+
+        # Post the fresh, clickable copy
+        new_embed = build_session_embed(ctx.guild.name, session["template_name"], spots)
+        new_view = OrganizeSessionView(self, session_id, spots)
+        new_msg = await ctx.send(embed=new_embed, view=new_view)
+        await self.db.set_organize_session_message(session_id, new_msg.id)
 
     # ------------------------------------------------------------------
     # Sessions: start / end / cancel
@@ -528,6 +548,10 @@ class Organize(commands.Cog):
         except (discord.NotFound, discord.HTTPException):
             pass
 
+        # Everything worth keeping now lives in `reserves` — drop the
+        # session doc so closed events don't pile up in Mongo.
+        await self.db.delete_organize_session(session_id)
+
         if not added_summary:
             await ctx.reply("✅ Session ended. Nobody had claimed a spot, so nothing was added to reserves.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
@@ -561,6 +585,8 @@ class Organize(commands.Cog):
             await msg.edit(embed=closed_embed, view=closed_view)
         except (discord.NotFound, discord.HTTPException):
             pass
+
+        await self.db.delete_organize_session(session_id)
 
         await ctx.reply("✅ Session cancelled. Nothing was added to reserves.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
