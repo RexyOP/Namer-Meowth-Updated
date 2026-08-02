@@ -272,6 +272,16 @@ class Organize(commands.Cog):
             value="Click a spot's button to claim it. Click it again to release it.",
             inline=False,
         )
+        embed.add_field(
+            name="🚫 Blacklist (Admin only)",
+            value=(
+                f"`{p}og blacklist` — view blocked roles\n"
+                f"`{p}og blacklist add <@role|id>` — block a role from claiming spots\n"
+                f"`{p}og blacklist remove <@role|id>` — unblock a role\n"
+                f"`{p}og blacklist clear` — clear the blacklist"
+            ),
+            inline=False,
+        )
         await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ------------------------------------------------------------------
@@ -464,6 +474,83 @@ class Organize(commands.Cog):
         await self.db.set_organize_session_message(session_id, new_msg.id)
 
     # ------------------------------------------------------------------
+    # Blacklisted roles — can't claim spots
+    # ------------------------------------------------------------------
+    @organize_group.group(name="blacklist", aliases=["bl"], invoke_without_command=True)
+    async def blacklist_group(self, ctx):
+        if ctx.invoked_subcommand is None:
+            await self._show_blacklist(ctx)
+
+    async def _show_blacklist(self, ctx):
+        role_ids = await self.db.get_organize_blacklisted_roles(ctx.guild.id)
+        if not role_ids:
+            embed = discord.Embed(
+                title="🚫 Organize — Blacklisted Roles",
+                description=f"No roles blacklisted. Everyone can claim spots.\n\nUse `{ctx.prefix}og blacklist add <@role|id>` to block a role.",
+                color=EMBED_COLOR,
+            )
+        else:
+            lines = []
+            for rid in role_ids:
+                role = ctx.guild.get_role(rid)
+                lines.append(f"• {role.mention} (`{rid}`)" if role else f"• ~~Unknown role~~ (`{rid}`) — deleted?")
+            embed = discord.Embed(
+                title="🚫 Organize — Blacklisted Roles",
+                description="\n".join(lines),
+                color=EMBED_COLOR,
+            )
+            embed.set_footer(text=f"{len(role_ids)} role(s) — members with these can't claim organize spots")
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @blacklist_group.command(name="add")
+    @commands.has_permissions(administrator=True)
+    async def blacklist_add(self, ctx, *, role_input: str):
+        """Block a role from claiming organize spots. Use @mention or role ID."""
+        role = await self._resolve_role(ctx, role_input)
+        if role is None:
+            await ctx.reply("❌ Could not find that role. Use @mention or role ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+        await self.db.add_organize_blacklisted_role(ctx.guild.id, role.id)
+        await ctx.reply(f"✅ {role.mention} can no longer claim organize spots.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @blacklist_group.command(name="remove")
+    @commands.has_permissions(administrator=True)
+    async def blacklist_remove(self, ctx, *, role_input: str):
+        """Unblock a role from claiming organize spots."""
+        role = await self._resolve_role(ctx, role_input)
+        if role is None:
+            await ctx.reply("❌ Could not find that role. Use @mention or role ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+        await self.db.remove_organize_blacklisted_role(ctx.guild.id, role.id)
+        await ctx.reply(f"✅ {role.mention} removed from the organize blacklist.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @blacklist_group.command(name="clear")
+    @commands.has_permissions(administrator=True)
+    async def blacklist_clear(self, ctx):
+        """Clear the entire organize blacklist."""
+        await self.db.clear_organize_blacklisted_roles(ctx.guild.id)
+        await ctx.reply("✅ Organize blacklist cleared.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    async def _resolve_role(self, ctx, role_input: str) -> Optional[discord.Role]:
+        raw = role_input.strip("<@&> ")
+        if raw.isdigit():
+            return ctx.guild.get_role(int(raw))
+        low = role_input.lower().strip()
+        for role in ctx.guild.roles:
+            if role.name.lower() == low:
+                return role
+        return None
+
+    @blacklist_add.error
+    @blacklist_remove.error
+    @blacklist_clear.error
+    async def blacklist_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to manage the organize blacklist.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.reply("❌ Please provide a role mention or ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    # ------------------------------------------------------------------
     # Sessions: start / end / cancel
     # ------------------------------------------------------------------
     @organize_group.command(name="start")
@@ -608,7 +695,8 @@ class Organize(commands.Cog):
         user = interaction.user
 
         if spot.get("reserved_by") == user.id:
-            # Release own claim
+            # Release own claim — always allowed, even if later blacklisted,
+            # so nobody gets stuck holding a spot they can't undo.
             await self.db.set_organize_session_spot(session_id, index, None, None)
             spot["reserved_by"] = None
             spot["reserved_name"] = None
@@ -619,6 +707,13 @@ class Organize(commands.Cog):
             )
             return
         else:
+            blacklisted = await self.db.get_organize_blacklisted_roles(interaction.guild.id)
+            if blacklisted and {r.id for r in user.roles} & set(blacklisted):
+                await interaction.response.send_message(
+                    "⚠️ You have a role that's blacklisted from claiming organize spots.",
+                    ephemeral=True,
+                )
+                return
             await self.db.set_organize_session_spot(session_id, index, user.id, user.display_name)
             spot["reserved_by"] = user.id
             spot["reserved_name"] = user.display_name
