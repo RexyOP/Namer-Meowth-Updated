@@ -98,6 +98,9 @@ class Database:
             await self.db.organize_sessions.create_index([("guild_id", 1), ("channel_id", 1)])
             await self.db.organize_sessions.create_index("status")
 
+            # Organize blacklisted roles — per-guild, can't claim spots
+            await self.db.organize_blacklisted_roles.create_index("guild_id", unique=True)
+
             print("✅ Database indexes created")
         except Exception as e:
             print(f"Warning: Could not create indexes: {e}")
@@ -1114,3 +1117,26 @@ class Database:
         )
         if self.gcache:
             self.gcache.invalidate_guild_settings(guild_id)
+
+    # -------------------------------------------------------------------------
+    # Organize — blacklisted roles (can't claim spots)
+    # -------------------------------------------------------------------------
+    async def get_organize_blacklisted_roles(self, guild_id: int) -> List[int]:
+        doc = await self.db.organize_blacklisted_roles.find_one({"guild_id": guild_id})
+        return doc.get('role_ids', []) if doc else []
+
+    async def add_organize_blacklisted_role(self, guild_id: int, role_id: int):
+        await self.db.organize_blacklisted_roles.update_one(
+            {"guild_id": guild_id},
+            {"$addToSet": {"role_ids": role_id}},
+            upsert=True
+        )
+
+    async def remove_organize_blacklisted_role(self, guild_id: int, role_id: int):
+        await self.db.organize_blacklisted_roles.update_one(
+            {"guild_id": guild_id},
+            {"$pull": {"role_ids": role_id}}
+        )
+
+    async def clear_organize_blacklisted_roles(self, guild_id: int):
+        await self.db.organize_blacklisted_roles.delete_one({"guild_id": guild_id})
