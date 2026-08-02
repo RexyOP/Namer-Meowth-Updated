@@ -229,7 +229,9 @@ class StarboardUnbox(commands.Cog):
 
         # Milestone rewards get a dedicated black embed since we only know the name + shiny status
         embed_color = 0x000000 if is_milestone else EMBED_COLOR
-        embed = discord.Embed(color=embed_color, timestamp=datetime.utcnow())
+        # Footer date should reflect when the original message was sent, not when it was checked
+        embed_timestamp = original_message.created_at if original_message else datetime.utcnow()
+        embed = discord.Embed(color=embed_color, timestamp=embed_timestamp)
 
         # Determine title based on criteria
         title_parts = []
