@@ -125,8 +125,8 @@ class StarboardUnbox(commands.Cog):
 
             pokemon_found.append({
                 'pokemon_name': pokemon_name,
-                'level': '?',
-                'iv': '?',
+                'level': '???',
+                'iv': '???',
                 'is_shiny': is_shiny,
                 'is_gigantamax': is_gigantamax,
                 'gender': None
