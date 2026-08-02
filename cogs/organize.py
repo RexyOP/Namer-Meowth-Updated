@@ -22,8 +22,8 @@ NO_MENTIONS = discord.AllowedMentions.none()
 
 MAX_SPOTS = 25  # Discord hard limit: 5 rows x 5 buttons per message
 
-OPEN_EMOJI = "🔓"
-CLAIMED_EMOJI = "🔒"
+OPEN_EMOJI = "<:greydot:1423970632130887710>"
+CLAIMED_EMOJI = "<:greendot:1423970586245201920>"
 
 
 # ---------------------------------------------------------------------------
