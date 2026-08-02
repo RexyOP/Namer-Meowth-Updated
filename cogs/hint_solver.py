@@ -20,8 +20,11 @@ def build_hint_regex(hint: str) -> re.Pattern:
       - The trailing punctuation (period / exclamation mark) is stripped
         before processing.
     """
-    # Strip leading/trailing whitespace and remove trailing sentence punctuation
-    cleaned = hint.strip().rstrip(".!")
+    # Strip leading/trailing whitespace. Note: we deliberately do NOT strip a
+    # trailing "." here — some Pokémon names legitimately end in a period
+    # (e.g. "Mime Jr."), and extract_hint() is responsible for making sure
+    # only the real sentence-ending period (if any) is excluded already.
+    cleaned = hint.strip()
 
     pattern_parts = []
     for ch in cleaned:
@@ -46,8 +49,11 @@ def extract_hint(message_content: str) -> Optional[str]:
     so we unescape them back to plain _ before returning.
     Returns the raw hint string (e.g. '___v_tar') or None if not found.
     """
+    # Greedy capture: matches up to the LAST period in the message, so a
+    # name containing its own period (e.g. "Mime Jr.") isn't cut short at
+    # that internal period before reaching the sentence-ending one.
     match = re.search(
-        r"[Tt]he\s+pok[eé]mon\s+is\s+(.+?)\.",
+        r"[Tt]he\s+pok[eé]mon\s+is\s+(.+)\.",
         message_content,
         re.IGNORECASE | re.DOTALL,
     )
@@ -144,7 +150,7 @@ class HintSolver(commands.Cog):
             matched_name = matches[0]["matched_name"]
             if matched_name.lower() != english_name.lower():
                 await message.reply(
-                    f"It's **{english_name}** ({matched_name})",
+                    f"This pokémon is **{english_name}** ({matched_name})",
                     mention_author=False,
                 )
             else:
