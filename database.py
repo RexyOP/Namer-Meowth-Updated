@@ -95,8 +95,8 @@ class Database:
             await self.db.organize_templates.create_index([("guild_id", 1), ("name_lower", 1)], unique=True)
 
             # Organize sessions — a live "organize" event posted with buttons
-            await self.db.organize_sessions.create_index([("guild_id", 1), ("channel_id", 1)])
-            await self.db.organize_sessions.create_index("status")
+            # (server-wide: at most one active session per guild, regardless of channel)
+            await self.db.organize_sessions.create_index([("guild_id", 1), ("status", 1)])
 
             # Organize blacklisted roles — per-guild, can't claim spots
             await self.db.organize_blacklisted_roles.create_index("guild_id", unique=True)
@@ -1030,13 +1030,16 @@ class Database:
         })
         return str(result.inserted_id)
 
-    async def set_organize_session_message(self, session_id: str, message_id: int):
+    async def set_organize_session_message(self, session_id: str, message_id: int, channel_id: Optional[int] = None):
         try:
             oid = ObjectId(session_id)
         except InvalidId:
             return
+        update = {"message_id": message_id}
+        if channel_id is not None:
+            update["channel_id"] = channel_id
         await self.db.organize_sessions.update_one(
-            {"_id": oid}, {"$set": {"message_id": message_id}}
+            {"_id": oid}, {"$set": update}
         )
 
     async def get_organize_session(self, session_id: str) -> Optional[dict]:
@@ -1046,9 +1049,9 @@ class Database:
             return None
         return await self.db.organize_sessions.find_one({"_id": oid})
 
-    async def get_active_organize_session_in_channel(self, channel_id: int) -> Optional[dict]:
+    async def get_active_organize_session_in_guild(self, guild_id: int) -> Optional[dict]:
         return await self.db.organize_sessions.find_one({
-            "channel_id": channel_id, "status": "active"
+            "guild_id": guild_id, "status": "active"
         })
 
     async def get_all_active_organize_sessions(self) -> List[dict]:
