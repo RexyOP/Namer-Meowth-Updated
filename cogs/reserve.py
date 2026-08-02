@@ -86,13 +86,16 @@ class ReserveListView(discord.ui.View):
 # Helper to build paginated reserve list embeds
 # ---------------------------------------------------------------------------
 def build_reserve_list_embeds(
-    guild_name: str, reserve_docs: list[dict]
+    guild_name: str, reserve_docs: list[dict], guild: discord.Guild = None
 ) -> list[discord.Embed]:
     """
     Build a list of Discord embeds for the reserve list.
     Each 'page' holds up to ITEMS_PER_PAGE pokemon entries across all users.
     First page starts with a summary of all users and their counts.
     Users are shown with their mention as a header, pokemon as bullet lines.
+
+    If `guild` is provided, the summary line for each user also shows their
+    display name after the mention (e.g. "<@id> (Username) — 3").
     """
     if not reserve_docs:
         embed = discord.Embed(
@@ -116,11 +119,13 @@ def build_reserve_list_embeds(
         )
         return [embed]
 
-    # Build summary: user mentions with their counts
+    # Build summary: user mentions (with username) and their counts
     summary_lines = []
     for uid, pokes in pairs:
         count = len(pokes)
-        summary_lines.append(f"<@{uid}> — {count}")
+        member = guild.get_member(uid) if guild else None
+        name_suffix = f" ({member.display_name})" if member else ""
+        summary_lines.append(f"<@{uid}>{name_suffix} — {count}")
     
     summary_text = "\n".join(summary_lines)
 
@@ -800,7 +805,7 @@ class Reserve(commands.Cog):
             docs = [{"user_id": uid, "pokemon": pokemon_list}]
             guild_name = f"{ctx.guild.name} — <@{uid}>"
 
-        pages = build_reserve_list_embeds(guild_name, docs)
+        pages = build_reserve_list_embeds(guild_name, docs, guild=ctx.guild)
 
         if len(pages) == 1:
             await ctx.reply(embed=pages[0], mention_author=False, allowed_mentions=NO_MENTIONS)
