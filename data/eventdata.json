@@ -2660,8 +2660,8 @@
     "dex_number": 132,
     "name": "Pokopia Ditto",
     "other_names": {},
-    "is_variant": true,
-    "variant_of": "Ditto",
+    "is_variant": false,
+    "variant_of": null,
     "rarity": "Event"
   },
   {
