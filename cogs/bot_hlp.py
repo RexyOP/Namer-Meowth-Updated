@@ -890,6 +890,15 @@ class Help(commands.Cog):
                 inline=False,
             )
             embed.add_field(
+                name="🔧 Admin: Manual Spot Management",
+                value=(
+                    f"`{prefix}og spot` — numbered list of every spot and who holds it\n"
+                    f"`{prefix}og spot set <#> <@member>` — assign/replace a spot's claim\n"
+                    f"`{prefix}og spot clear <#>` — remove whoever holds a spot, opening it back up"
+                ),
+                inline=False,
+            )
+            embed.add_field(
                 name="💡 Spot format",
                 value=(
                     "One spot per line: `pokemon | <name>` or `category | <name>`, optional `| <price>` at the end.\n"
@@ -1096,7 +1105,7 @@ class Help(commands.Cog):
                 value=(
                     f"Everyone: click buttons to claim/release spots\n"
                     f"**Admin:** `{prefix}og template create/edit/delete/view/list` • `{prefix}og start [template]` • "
-                    f"`{prefix}og view` • `{prefix}og end` • `{prefix}og cancel` • `{prefix}og blacklist add/remove/clear`"
+                    f"`{prefix}og view` • `{prefix}og end` • `{prefix}og cancel` • `{prefix}og spot set/clear` • `{prefix}og blacklist add/remove/clear`"
                 ),
                 inline=False,
             )
