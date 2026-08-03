@@ -208,6 +208,49 @@ async def get_image_url_from_message(message: discord.Message) -> Optional[str]:
 
     return None
 
+async def is_role_blacklisted(db, member) -> bool:
+    """Check whether a guild member holds any command-blacklisted role.
+
+    `member` should be a discord.Member (has a `.roles` and `.guild`
+    attribute). Returns False for anything else (e.g. DMs) or if the
+    guild has no blacklisted roles configured.
+    """
+    guild = getattr(member, "guild", None)
+    roles = getattr(member, "roles", None)
+    if guild is None or roles is None:
+        return False
+
+    blacklisted_ids = await db.get_command_blacklist_roles(guild.id)
+    if not blacklisted_ids:
+        return False
+
+    member_role_ids = {r.id for r in roles}
+    return any(rid in member_role_ids for rid in blacklisted_ids)
+
+
+async def slash_blacklist_check(interaction: discord.Interaction) -> bool:
+    """app_commands check: blocks blacklisted-role members from slash commands.
+
+    Attach with @app_commands.check(slash_blacklist_check) on any slash
+    command that lives in a blacklist-enforced cog.
+    """
+    if interaction.guild is None:
+        return True
+
+    db = getattr(interaction.client, "db", None)
+    if db is None:
+        return True
+
+    if await is_role_blacklisted(db, interaction.user):
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "🚫 You are blacklisted from using these commands in this server.",
+                ephemeral=True,
+            )
+        return False
+    return True
+
+
 def create_text_file(content: str, filename: str = "collection.txt") -> discord.File:
     """Create a text file from string content"""
     import io
