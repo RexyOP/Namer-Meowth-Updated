@@ -324,6 +324,22 @@ class Reserve(commands.Cog):
 
         return None, text
 
+    def _extract_multiple_users(self, text: str) -> list[int]:
+        """
+        Extract all user mentions / raw IDs from a string, in the order
+        they appear. Used by `switch` and `transfer`, which only take
+        user references (no pokemon/category text) as arguments.
+        """
+        mention_re = re.compile(r"^<@!?(\d+)>$")
+        ids: list[int] = []
+        for tok in (text or "").split():
+            m = mention_re.match(tok)
+            if m:
+                ids.append(int(m.group(1)))
+            elif tok.isdigit() and 17 <= len(tok) <= 20:
+                ids.append(int(tok))
+        return ids
+
     # ------------------------------------------------------------------
     # Main group
     # ------------------------------------------------------------------
@@ -349,7 +365,8 @@ class Reserve(commands.Cog):
                 f"`{p}r remove p <pokemon,...>` — Remove Pokemon from your reserves\n"
                 f"`{p}r remove pokemon <pokemon,...>` — Same as above\n"
                 f"`{p}r remove cat <category>` — Remove a category from your reserves\n"
-                f"`{p}r clear` — Clear all your reserves ⚠️"
+                f"`{p}r clear` — Clear all your reserves ⚠️\n"
+                f"`{p}r transfer @user` — Move YOUR reserves to another account"
             ),
             inline=False
         )
@@ -364,7 +381,9 @@ class Reserve(commands.Cog):
                 f"`{p}r remove p @user <pokemon,...>` — Remove Pokemon from user's reserves\n"
                 f"`{p}r remove cat @user <category>` — Remove category from user's reserves\n"
                 f"`{p}r clear @user` — Clear a user's reserves\n"
-                f"`{p}r clear --all` — Clear ALL reserves in server ⚠️"
+                f"`{p}r clear --all` — Clear ALL reserves in server ⚠️\n"
+                f"`{p}r switch @user1 @user2` — Swap two users' reserves\n"
+                f"`{p}r transfer @user1 @user2` — Move user1's reserves to user2"
             ),
             inline=False
         )
@@ -767,6 +786,157 @@ class Reserve(commands.Cog):
                     await ctx.reply(
                         f"⚠️ <@{uid}> had no reserves in this server.", mention_author=False, allowed_mentions=NO_MENTIONS
                     )
+
+    # ------------------------------------------------------------------
+    # p!reserve switch @user1 @user2   (admin/allowed roles only)
+    # ------------------------------------------------------------------
+    @reserve_group.command(name="switch", aliases=["sw"])
+    async def reserve_switch(self, ctx, *, users: str = None):
+        """
+        Swap the entire reserve lists of two users.
+        Admin/allowed roles only.
+        Usage: p!r switch @user1 @user2
+        """
+        if not await self._has_reserve_permission(ctx):
+            await ctx.reply(
+                "❌ You don't have permission to switch reserves.",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return
+
+        user_ids = self._extract_multiple_users(users)
+        if len(user_ids) < 2:
+            await ctx.reply(
+                f"❌ Usage: `{ctx.prefix}r switch @user1 @user2`",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return
+
+        uid1, uid2 = user_ids[0], user_ids[1]
+        if uid1 == uid2:
+            await ctx.reply(
+                "❌ Can't switch a user's reserve with themselves.",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return
+
+        list1 = await self.db.get_user_reserve(uid1, ctx.guild.id)
+        list2 = await self.db.get_user_reserve(uid2, ctx.guild.id)
+
+        if not list1 and not list2:
+            await ctx.reply(
+                f"⚠️ Neither <@{uid1}> nor <@{uid2}> have any reserves in this server.",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return
+
+        # Clear both first so add_pokemon_to_reserve doesn't merge with
+        # their own old list, then give each user the other's old list.
+        await self.db.clear_user_reserve(uid1, ctx.guild.id)
+        await self.db.clear_user_reserve(uid2, ctx.guild.id)
+
+        if list2:
+            await self.db.add_pokemon_to_reserve(uid1, ctx.guild.id, list2)
+        if list1:
+            await self.db.add_pokemon_to_reserve(uid2, ctx.guild.id, list1)
+
+        await ctx.reply(
+            f"🔄 Switched reserves — <@{uid1}> ↔ <@{uid2}> "
+            f"({len(list1)} ↔ {len(list2)} Pokémon).",
+            mention_author=False,
+            allowed_mentions=NO_MENTIONS,
+        )
+
+    @reserve_switch.error
+    async def reserve_switch_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.reply(
+                f"❌ Usage: `{ctx.prefix}r switch @user1 @user2`",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+
+    # ------------------------------------------------------------------
+    # p!reserve transfer @user                 (any member — move YOUR reserves)
+    # p!reserve transfer @user1 @user2          (admin/allowed roles — move user1 -> user2)
+    # ------------------------------------------------------------------
+    @reserve_group.command(name="transfer", aliases=["tr"])
+    async def reserve_transfer(self, ctx, *, users: str = None):
+        """
+        Transfer reserves from one user to another (added on top of whatever
+        the target already has — the source's reserves are cleared).
+
+        Normal members: p!r transfer @user  — moves YOUR reserves to @user.
+        Admin/allowed roles: p!r transfer @user1 @user2 — moves @user1's
+        reserves to @user2 (does not move anything back from user2).
+        """
+        user_ids = self._extract_multiple_users(users)
+
+        if not user_ids:
+            await ctx.reply(
+                f"❌ Usage: `{ctx.prefix}r transfer @user` (move your reserves)\n"
+                f"or `{ctx.prefix}r transfer @user1 @user2` (admin only)",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return
+
+        if len(user_ids) == 1:
+            # Self-transfer: move ctx.author's reserves to the target user.
+            source_id = ctx.author.id
+            target_id = user_ids[0]
+        else:
+            # Admin transfer between two specified users.
+            if not await self._has_reserve_permission(ctx):
+                await ctx.reply(
+                    "❌ You don't have permission to transfer reserves between other users.",
+                    mention_author=False,
+                    allowed_mentions=NO_MENTIONS,
+                )
+                return
+            source_id, target_id = user_ids[0], user_ids[1]
+
+        if source_id == target_id:
+            await ctx.reply(
+                "❌ Source and target user can't be the same.",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return
+
+        source_list = await self.db.get_user_reserve(source_id, ctx.guild.id)
+        if not source_list:
+            who = "You have" if source_id == ctx.author.id else f"<@{source_id}> has"
+            await ctx.reply(
+                f"⚠️ {who} no reserves in this server to transfer.",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return
+
+        await self.db.clear_user_reserve(source_id, ctx.guild.id)
+        await self.db.add_pokemon_to_reserve(target_id, ctx.guild.id, source_list)
+
+        source_desc = "your" if source_id == ctx.author.id else f"<@{source_id}>'s"
+        await ctx.reply(
+            f"✅ Transferred {len(source_list)} Pokémon from {source_desc} reserve to <@{target_id}>.",
+            mention_author=False,
+            allowed_mentions=NO_MENTIONS,
+        )
+
+    @reserve_transfer.error
+    async def reserve_transfer_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.reply(
+                f"❌ Usage: `{ctx.prefix}r transfer @user` (move your reserves)\n"
+                f"or `{ctx.prefix}r transfer @user1 @user2` (admin only)",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
 
     # ------------------------------------------------------------------
     # p!reserve list [user]
