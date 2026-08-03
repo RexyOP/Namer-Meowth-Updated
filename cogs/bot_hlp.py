@@ -16,7 +16,7 @@ class Help(commands.Cog):
     async def help_command(self, ctx, category: str = None):
         """Show help information
 
-        Categories: collection, category, hunt, pings, settings, roles, prediction, starboard, helpful, eventextract, incense, captcha, reserve, organize, channels, listgen, owner, all
+        Categories: collection, category, hunt, pings, settings, roles, blacklist, prediction, starboard, helpful, eventextract, incense, captcha, reserve, organize, channels, listgen, owner, all
         """
         prefix = BOT_PREFIX[0]
         is_owner = await self.bot.is_owner(ctx.author)
@@ -33,6 +33,7 @@ class Help(commands.Cog):
             embed.add_field(name="🔷 Type & Region",    value=f"`{prefix}help pings` — Get pinged by Pokémon type or region",             inline=False)
             embed.add_field(name="⚙️ Settings",         value=f"`{prefix}help settings` — Toggle features and AFK",                       inline=False)
             embed.add_field(name="🎭 Roles",            value=f"`{prefix}help roles` — Configure rare / regional ping roles",              inline=False)
+            embed.add_field(name="🚫 Blacklist",        value=f"`{prefix}help blacklist` — Block a role from using bot commands",         inline=False)
             embed.add_field(name="📺 Channels",         value=f"`{prefix}help channels` — Configure all bot channels (starboard, captcha…)",inline=False)
             embed.add_field(name="🔮 Prediction",       value=f"`{prefix}help prediction` — Manual Pokémon prediction",                   inline=False)
             embed.add_field(name="🔍 Helpful",          value=f"`{prefix}help helpful` — Spawn rates, shiny rates & hint solver",          inline=False)
@@ -97,6 +98,17 @@ class Help(commands.Cog):
                 ),
                 inline=False,
             )
+            embed.add_field(
+                name=f"`{prefix}cl limit set <number>`  *(Admin)*",
+                value=(
+                    "Cap how many Pokémon a user can hold in their collection for this server\n"
+                    f"• `{prefix}cl limit set 50` — set the cap\n"
+                    f"• `{prefix}cl limit clear` / `{prefix}cl limit reset` — remove the cap\n"
+                    f"• `{prefix}cl limit` (no args) — view the current cap\n"
+                    "If a `cl add` would push someone over the cap, only enough Pokémon to reach it are added."
+                ),
+                inline=False,
+            )
 
         # ── Category ──────────────────────────────────────────────────
         elif category in ["category", "cat", "categories"]:
@@ -131,6 +143,17 @@ class Help(commands.Cog):
             )
             embed.add_field(name=f"`{prefix}sh`",               value="Check your current shiny hunt",               inline=False)
             embed.add_field(name=f"`{prefix}sh <pokemon>`",     value="Start hunting a Pokémon (`{prefix}sh Pikachu`)", inline=False)
+            embed.add_field(
+                name=f"`{prefix}sh remove <pokemon>`",
+                value=(
+                    "Remove specific variant(s) from your current hunt, keeping the rest\n"
+                    f"**Aliases:** `{prefix}sh rm`\n"
+                    f"• `{prefix}sh remove Meowth` — if hunting Meowth, Alolan Meowth, Galarian Meowth, this stops the base form only\n"
+                    f"• `{prefix}sh remove Meowth, Galarian Meowth` — remove several at once\n"
+                    f"• `{prefix}sh remove Furfrou all` — remove every Furfrou variant"
+                ),
+                inline=False,
+            )
             embed.add_field(name=f"`{prefix}sh clear`",         value="Stop hunting (also accepts `none` / `stop`)", inline=False)
             embed.add_field(
                 name=f"`{prefix}sh who <pokemon>`",
@@ -219,7 +242,8 @@ class Help(commands.Cog):
                 name="📺 Channel & Role Config",
                 value=(
                     f"See `{prefix}help channels` for channel configuration\n"
-                    f"See `{prefix}help roles` for role configuration"
+                    f"See `{prefix}help roles` for role configuration\n"
+                    f"See `{prefix}help blacklist` for blocking a role from bot commands"
                 ),
                 inline=False,
             )
@@ -281,6 +305,48 @@ class Help(commands.Cog):
                     f"• `{prefix}r allowedroles add @Role` — add a role\n"
                     f"• `{prefix}r allowedroles remove @Role` — remove a role\n"
                     f"• `{prefix}r allowedroles clear` — remove all"
+                ),
+                inline=False,
+            )
+
+        # ── Blacklist ─────────────────────────────────────────────────
+        elif category in ["blacklist", "bl"]:
+            embed = discord.Embed(
+                title="🚫 Command Blacklist",
+                description=(
+                    "Block a role from using this bot's Collection, Shiny Hunt, Type/Region Ping, "
+                    "and Settings commands in this server — both prefix and slash commands."
+                ),
+                color=EMBED_COLOR,
+            )
+            embed.add_field(
+                name=f"`{prefix}blacklist role add @role`  *(Admin)*",
+                value=(
+                    "Add a role to the command blacklist\n"
+                    f"**Aliases:** `{prefix}bl role add`"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name=f"`{prefix}blacklist role remove @role`  *(Admin)*",
+                value="Remove a role from the command blacklist",
+                inline=False,
+            )
+            embed.add_field(
+                name=f"`{prefix}blacklist role list`  *(Admin)*",
+                value="Show every role currently blacklisted",
+                inline=False,
+            )
+            embed.add_field(
+                name=f"`{prefix}blacklist role clear`  *(Admin)*",
+                value="Remove every role from the blacklist",
+                inline=False,
+            )
+            embed.add_field(
+                name="💡 Note",
+                value=(
+                    "Blacklisted members are blocked from `cl`, `sh`, `tp`/`rp`, `afk`, `role`, and other "
+                    "Settings commands, but `p!blacklist` itself always stays usable by admins so a mistake can be undone."
                 ),
                 inline=False,
             )
@@ -932,7 +998,10 @@ class Help(commands.Cog):
             )
             embed.add_field(
                 name="📦 Collection",
-                value=f"`{prefix}cl add` • `{prefix}cl remove` • `{prefix}cl list` • `{prefix}cl raw` • `{prefix}cl clear` • `{prefix}cl who`",
+                value=(
+                    f"`{prefix}cl add` • `{prefix}cl remove` • `{prefix}cl list` • `{prefix}cl raw` • `{prefix}cl clear` • `{prefix}cl who`\n"
+                    f"**Admin:** `{prefix}cl limit set <n>` • `{prefix}cl limit clear`"
+                ),
                 inline=False,
             )
             embed.add_field(
@@ -943,7 +1012,7 @@ class Help(commands.Cog):
                 ),
                 inline=False,
             )
-            embed.add_field(name="✨ Shiny Hunt",     value=f"`{prefix}sh` • `{prefix}sh <pokemon>` • `{prefix}sh clear` • `{prefix}sh who`",                     inline=False)
+            embed.add_field(name="✨ Shiny Hunt",     value=f"`{prefix}sh` • `{prefix}sh <pokemon>` • `{prefix}sh remove <pokemon>` • `{prefix}sh clear` • `{prefix}sh who`",                     inline=False)
             embed.add_field(name="🔷 Type & Region",  value=f"`{prefix}tp` • `{prefix}tp <types>` • `{prefix}rp` • `{prefix}rp <regions>`",    inline=False)
             embed.add_field(
                 name="⚙️ Settings",
@@ -960,6 +1029,11 @@ class Help(commands.Cog):
                     f"`{prefix}role rare [@role]` • `{prefix}role regional [@role]`\n"
                     f"`{prefix}inc allowedroles add/remove/clear @Role` • `{prefix}r allowedroles add/remove/clear @Role`"
                 ),
+                inline=False,
+            )
+            embed.add_field(
+                name="🚫 Blacklist  *(Admin)*",
+                value=f"`{prefix}blacklist role add/remove/list/clear @role`",
                 inline=False,
             )
             embed.add_field(
@@ -1062,7 +1136,7 @@ class Help(commands.Cog):
         else:
             await ctx.reply(
                 f"❌ Unknown category: `{category}`\n"
-                f"Available: `collection`, `category`, `hunt`, `pings`, `settings`, `roles`, `channels`, "
+                f"Available: `collection`, `category`, `hunt`, `pings`, `settings`, `roles`, `blacklist`, `channels`, "
                 f"`prediction`, `starboard`, `helpful`, `eventextract`, `incense`, `captcha`, `reserve`, `organize`, `listgen`, "
                 f"{'`owner`, ' if is_owner else ''}`all`\n"
                 f"Use `{prefix}help` to see the main help menu.",
@@ -1163,7 +1237,7 @@ class Help(commands.Cog):
     # Slash Commands
     # ------------------------------------------------------------------
     @app_commands.command(name="help", description="Show help information for the bot")
-    @app_commands.describe(category="Category: collection, category, hunt, pings, settings, roles, channels, prediction, starboard, helpful, eventextract, incense, captcha, reserve, organize, listgen, all")
+    @app_commands.describe(category="Category: collection, category, hunt, pings, settings, roles, blacklist, channels, prediction, starboard, helpful, eventextract, incense, captcha, reserve, organize, listgen, all")
     async def slash_help(self, interaction: discord.Interaction, category: str = None):
         ctx = await commands.Context.from_interaction(interaction)
         await self.help_command(ctx, category=category)
