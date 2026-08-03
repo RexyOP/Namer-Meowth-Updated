@@ -63,6 +63,13 @@ async def _get_allowed_roles(db, guild_id: int) -> list[int]:
 async def _set_allowed_roles(db, guild_id: int, roles: list[int]):
     await _save_guild_doc(db, guild_id, {"incense_allowed_roles": roles})
 
+async def _get_log_channel(db, guild_id: int) -> int | None:
+    doc = await _get_guild_doc(db, guild_id)
+    return doc.get("incense_log_channel")
+
+async def _set_log_channel(db, guild_id: int, channel_id: int | None):
+    await _save_guild_doc(db, guild_id, {"incense_log_channel": channel_id})
+
 
 # ─────────────────────────────────────────────
 #  Permission helpers
@@ -425,6 +432,48 @@ class Incense(commands.Cog):
     def _bot_mention(self) -> str:
         return self.bot.user.mention if self.bot.user else "@MiniMeowth"
 
+    async def _log_pause_resume(
+        self,
+        guild: discord.Guild,
+        actor: discord.abc.User,
+        action: str,
+        target_desc: str,
+        jump_url: str | None = None,
+    ):
+        """Post a pause/resume log entry to the guild's configured log channel, if any."""
+        log_channel_id = await _get_log_channel(self.db, guild.id)
+        if not log_channel_id:
+            return
+        log_channel = guild.get_channel(log_channel_id)
+        if not isinstance(log_channel, discord.TextChannel):
+            return
+
+        icon = "⏸️" if "Pause" in action else "▶️"
+        now_ts = int(discord.utils.utcnow().timestamp())
+        embed = discord.Embed(
+            description=(
+                f"{icon} **{action}**\n"
+                f"**By:** {actor.mention} (`{actor.id}`)\n"
+                f"**Channel:** {target_desc}\n"
+                f"**Time:** <t:{now_ts}:F> (<t:{now_ts}:R>)"
+            ),
+            color=config.EMBED_COLOR
+        )
+
+        view = None
+        if jump_url:
+            view = discord.ui.View()
+            view.add_item(discord.ui.Button(
+                label="Jump to Command",
+                style=discord.ButtonStyle.link,
+                url=jump_url
+            ))
+
+        try:
+            await log_channel.send(embed=embed, view=view, allowed_mentions=NO_MENTIONS)
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
     async def _get_next_channel_mention(self, channel: discord.TextChannel) -> str | None:
         """
         Find the "next" channel after `channel` for incense purposes:
@@ -625,6 +674,57 @@ class Incense(commands.Cog):
             )
         await interaction.response.send_message(embed=embed, allowed_mentions=NO_MENTIONS)
 
+    # ── /inc logchannel ──────────────────────
+
+    logchannel_group = app_commands.Group(
+        name="logchannel",
+        description="Manage the channel where pause/resume actions are logged",
+        parent=inc_group
+    )
+
+    @logchannel_group.command(name="set", description="Set the channel where pause/resume actions are logged")
+    @app_commands.describe(channel="The channel to send pause/resume logs to")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def inc_logchannel_set(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        await _set_log_channel(self.db, interaction.guild_id, channel.id)
+        embed = discord.Embed(
+            description=f"✅ Pause/resume actions will now be logged in {channel.mention}.",
+            color=config.EMBED_COLOR
+        )
+        await interaction.response.send_message(embed=embed, allowed_mentions=NO_MENTIONS)
+
+    @logchannel_group.command(name="remove", description="Stop logging pause/resume actions")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def inc_logchannel_remove(self, interaction: discord.Interaction):
+        current = await _get_log_channel(self.db, interaction.guild_id)
+        if not current:
+            return await interaction.response.send_message(
+                embed=discord.Embed(
+                    description="⚠️ No log channel is currently set.",
+                    color=config.EMBED_COLOR
+                ), ephemeral=True, allowed_mentions=NO_MENTIONS
+            )
+        await _set_log_channel(self.db, interaction.guild_id, None)
+        embed = discord.Embed(
+            description="🗑️ Pause/resume logging has been disabled.",
+            color=config.EMBED_COLOR
+        )
+        await interaction.response.send_message(embed=embed, allowed_mentions=NO_MENTIONS)
+
+    @logchannel_group.command(name="view", description="View the current pause/resume log channel")
+    async def inc_logchannel_view(self, interaction: discord.Interaction):
+        current = await _get_log_channel(self.db, interaction.guild_id)
+        channel_obj = interaction.guild.get_channel(current) if current else None
+        embed = discord.Embed(
+            description=(
+                f"📋 Pause/resume actions are currently logged in {channel_obj.mention}."
+                if channel_obj else
+                "📋 No log channel is currently set."
+            ),
+            color=config.EMBED_COLOR
+        )
+        await interaction.response.send_message(embed=embed, allowed_mentions=NO_MENTIONS)
+
     # ── /inc pause ───────────────────────────
 
     @inc_group.command(
@@ -677,7 +777,13 @@ class Incense(commands.Cog):
                 ),
                 color=config.EMBED_COLOR
             )
-            return await placeholder.edit(embed=embed)
+            result = await placeholder.edit(embed=embed)
+            await self._log_pause_resume(
+                interaction.guild, interaction.user, "Paused ALL",
+                f"All monitored categories ({total_synced + total_already} channel{'s' if (total_synced + total_already) != 1 else ''})",
+                jump_url=placeholder.jump_url
+            )
+            return result
 
         channel = interaction.channel
         if not await self._channel_in_monitored_category(channel):
@@ -696,7 +802,11 @@ class Incense(commands.Cog):
             ),
             color=config.EMBED_COLOR
         )
-        await interaction.followup.send(embed=embed, allowed_mentions=NO_MENTIONS)
+        sent = await interaction.followup.send(embed=embed, allowed_mentions=NO_MENTIONS, wait=True)
+        await self._log_pause_resume(
+            interaction.guild, interaction.user, "Paused", channel.mention,
+            jump_url=sent.jump_url if sent else None
+        )
 
     # ── /inc resume ──────────────────────────
 
@@ -741,7 +851,13 @@ class Incense(commands.Cog):
                 ),
                 color=config.EMBED_COLOR
             )
-            return await placeholder.edit(embed=embed)
+            result = await placeholder.edit(embed=embed)
+            await self._log_pause_resume(
+                interaction.guild, interaction.user, "Resumed ALL",
+                f"All monitored categories ({total_synced + total_already} channel{'s' if (total_synced + total_already) != 1 else ''})",
+                jump_url=placeholder.jump_url
+            )
+            return result
 
         channel = interaction.channel
         if not await self._channel_in_monitored_category(channel):
@@ -756,7 +872,11 @@ class Incense(commands.Cog):
             description=f"▶️ Resumed {channel.mention} — synced to category permissions.",
             color=config.EMBED_COLOR
         )
-        await interaction.followup.send(embed=embed, allowed_mentions=NO_MENTIONS)
+        sent = await interaction.followup.send(embed=embed, allowed_mentions=NO_MENTIONS, wait=True)
+        await self._log_pause_resume(
+            interaction.guild, interaction.user, "Resumed", channel.mention,
+            jump_url=sent.jump_url if sent else None
+        )
 
     # ── /inc list ────────────────────────────
 
@@ -860,6 +980,16 @@ class Incense(commands.Cog):
                 f"`{p}inc allowedroles add @Role` — Add a role (also accepts role ID)\n"
                 f"`{p}inc allowedroles remove @Role` — Remove a role\n"
                 f"`{p}inc allowedroles clear` — Remove all allowed roles"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="📝 Log Channel  *(Manage Server)*",
+            value=(
+                f"`/inc logchannel set <channel>` — Log pause/resume actions there\n"
+                f"`/inc logchannel remove` — Stop logging\n"
+                f"`/inc logchannel view` — Show current log channel\n"
+                f"`{p}inc logchannel set #channel` · `{p}inc log set #channel`"
             ),
             inline=False
         )
@@ -1183,6 +1313,67 @@ class Incense(commands.Cog):
         )
         await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
+    # ── logchannel ───────────────────────────
+
+    @inc_prefix.group(name="logchannel", aliases=["log"], invoke_without_command=True, case_insensitive=True)
+    async def inc_prefix_logchannel(self, ctx: commands.Context):
+        """View, set, or remove the pause/resume log channel. Subcommands: set, remove, view."""
+        await ctx.invoke(self.inc_prefix_logchannel_view)
+
+    @inc_prefix_logchannel.command(name="set")
+    @commands.has_permissions(manage_guild=True)
+    async def inc_prefix_logchannel_set(self, ctx: commands.Context, channel: discord.TextChannel = None):
+        """
+        Set the channel where pause/resume actions are logged.
+        Usage:  inc logchannel set #channel
+        """
+        if channel is None:
+            p = config.BOT_PREFIX[0]
+            embed = discord.Embed(
+                description=f"❌ Please mention a channel.\n**Usage:** `{p}inc logchannel set #channel`",
+                color=config.EMBED_COLOR
+            )
+            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
+        await _set_log_channel(self.db, ctx.guild.id, channel.id)
+        embed = discord.Embed(
+            description=f"✅ Pause/resume actions will now be logged in {channel.mention}.",
+            color=config.EMBED_COLOR
+        )
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @inc_prefix_logchannel.command(name="remove", aliases=["clear"])
+    @commands.has_permissions(manage_guild=True)
+    async def inc_prefix_logchannel_remove(self, ctx: commands.Context):
+        """Stop logging pause/resume actions."""
+        current = await _get_log_channel(self.db, ctx.guild.id)
+        if not current:
+            embed = discord.Embed(
+                description="⚠️ No log channel is currently set.",
+                color=config.EMBED_COLOR
+            )
+            return await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
+        await _set_log_channel(self.db, ctx.guild.id, None)
+        embed = discord.Embed(
+            description="🗑️ Pause/resume logging has been disabled.",
+            color=config.EMBED_COLOR
+        )
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @inc_prefix_logchannel.command(name="view")
+    async def inc_prefix_logchannel_view(self, ctx: commands.Context):
+        """View the current pause/resume log channel."""
+        current = await _get_log_channel(self.db, ctx.guild.id)
+        channel_obj = ctx.guild.get_channel(current) if current else None
+        embed = discord.Embed(
+            description=(
+                f"📋 Pause/resume actions are currently logged in {channel_obj.mention}."
+                if channel_obj else
+                "📋 No log channel is currently set."
+            ),
+            color=config.EMBED_COLOR
+        )
+        await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
+
     # ── pause  (alias: p) ────────────────────
 
     @inc_prefix.command(name="pause", aliases=["p"])
@@ -1236,7 +1427,13 @@ class Incense(commands.Cog):
                 ),
                 color=config.EMBED_COLOR
             )
-            return await placeholder.edit(embed=embed)
+            result = await placeholder.edit(embed=embed)
+            await self._log_pause_resume(
+                ctx.guild, ctx.author, "Paused ALL",
+                f"All monitored categories ({total_synced + total_already} channel{'s' if (total_synced + total_already) != 1 else ''})",
+                jump_url=ctx.message.jump_url
+            )
+            return result
 
         channel = ctx.channel
 
@@ -1252,6 +1449,10 @@ class Incense(commands.Cog):
 
         already = await self._is_paused(channel)
         await self._pause_channel(channel)
+        await self._log_pause_resume(
+            ctx.guild, ctx.author, "Paused", channel.mention,
+            jump_url=ctx.message.jump_url
+        )
         embed = discord.Embed(
             description=(
                 f"⏸️ {'Already paused — refreshed permissions in' if already else 'Paused incense in'} {channel.mention}.\n"
@@ -1305,7 +1506,13 @@ class Incense(commands.Cog):
                 ),
                 color=config.EMBED_COLOR
             )
-            return await placeholder.edit(embed=embed)
+            result = await placeholder.edit(embed=embed)
+            await self._log_pause_resume(
+                ctx.guild, ctx.author, "Resumed ALL",
+                f"All monitored categories ({total_synced + total_already} channel{'s' if (total_synced + total_already) != 1 else ''})",
+                jump_url=ctx.message.jump_url
+            )
+            return result
 
         channel = ctx.channel
 
@@ -1320,6 +1527,10 @@ class Incense(commands.Cog):
             return await ctx.send(embed=embed, reference=ctx.message, mention_author=False, allowed_mentions=NO_MENTIONS)
 
         await self._resume_channel(channel)
+        await self._log_pause_resume(
+            ctx.guild, ctx.author, "Resumed", channel.mention,
+            jump_url=ctx.message.jump_url
+        )
         embed = discord.Embed(
             description=f"▶️ Resumed {channel.mention} — synced to category permissions.",
             color=config.EMBED_COLOR
@@ -1421,6 +1632,15 @@ class Incense(commands.Cog):
                 f"`{p}inc allowedroles add @Role` — Add a role (also accepts role ID)\n"
                 f"`{p}inc allowedroles remove @Role` — Remove a role\n"
                 f"`{p}inc allowedroles clear` — Remove all allowed roles"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="📝 Log Channel  *(Manage Server)*",
+            value=(
+                f"`{p}inc logchannel set #channel` / `{p}inc log set #channel` — Log pause/resume actions there\n"
+                f"`{p}inc logchannel remove` — Stop logging\n"
+                f"`{p}inc logchannel view` — Show current log channel"
             ),
             inline=False
         )
