@@ -14,6 +14,8 @@ from utils import (
     normalize_pokemon_name,
     get_pokemon_with_variants,
     is_rare_pokemon,
+    is_role_blacklisted,
+    slash_blacklist_check,
 )
 from config import EMBED_COLOR, ITEMS_PER_PAGE, MAX_DISPLAY_ITEMS
 
@@ -197,6 +199,19 @@ class Collection(commands.Cog):
         """Get database from bot"""
         return self.bot.db
 
+    async def cog_check(self, ctx):
+        """Block members holding a command-blacklisted role."""
+        if ctx.guild is None:
+            return True
+        if await is_role_blacklisted(self.db, ctx.author):
+            await ctx.reply(
+                "🚫 You are blacklisted from using these commands in this server.",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return False
+        return True
+
     async def create_collection_embed(self, user_id: int, guild_id: int, page: int = 1) -> discord.Embed:
         """Create paginated collection embed"""
         collection = await self.db.get_user_collection(user_id, guild_id)
@@ -302,6 +317,41 @@ class Collection(commands.Cog):
             await ctx.reply(error_msg, mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
+        # ── Enforce server collection limit, if one is set ──────────────────
+        limit_note = None
+        limit = await self.db.get_collection_limit(ctx.guild.id)
+        if limit is not None:
+            current_collection = await self.db.get_user_collection(ctx.author.id, ctx.guild.id)
+            current_set = {p.lower() for p in current_collection}
+
+            seen = set()
+            new_unique = []
+            for p in added_pokemon:
+                key = p.lower()
+                if key in current_set or key in seen:
+                    continue
+                seen.add(key)
+                new_unique.append(p)
+
+            available = max(0, limit - len(current_collection))
+            if len(new_unique) > available:
+                skipped_count = len(new_unique) - available
+                already_owned = [p for p in added_pokemon if p.lower() in current_set]
+                added_pokemon = new_unique[:available] + already_owned
+
+                if available == 0:
+                    await ctx.reply(
+                        f"❌ Your collection is already at this server's limit of **{limit}** Pokémon. "
+                        f"Nothing new was added.",
+                        mention_author=False, allowed_mentions=NO_MENTIONS
+                    )
+                    return
+
+                limit_note = (
+                    f"\n\n⚠️ Server collection limit is **{limit}**. Only **{available}** of the "
+                    f"**{len(new_unique)}** new Pokémon were added; **{skipped_count}** were skipped."
+                )
+
         await self.db.add_pokemon_to_collection(ctx.author.id, ctx.guild.id, added_pokemon)
 
         # Format response with character limit safety
@@ -349,6 +399,9 @@ class Collection(commands.Cog):
                 response += forms_text
             else:
                 response += f"\n💡 {len(has_forms_hints)} Pokémon in your list have other forms. Use `<name> all` to add all forms."
+
+        if limit_note and len(response) + len(limit_note) < 1900:
+            response += limit_note
 
         await ctx.reply(response, mention_author=False, allowed_mentions=NO_MENTIONS)
 
@@ -517,6 +570,64 @@ class Collection(commands.Cog):
             else:
                 msg = f"No Pokémon{sr_label} were removed (they might not be in your collection)."
             await ctx.reply(msg, mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @collection_group.group(name="limit", invoke_without_command=True)
+    async def collection_limit_group(self, ctx):
+        """View, set, or clear the server's collection size limit.
+
+        Subcommands:
+            p!cl limit set 50      — cap collections at 50 Pokémon (Admin only)
+            p!cl limit clear       — remove the cap (Admin only)
+            p!cl limit reset       — same as clear
+
+        Run without a subcommand to see the current limit.
+        """
+        if ctx.invoked_subcommand is not None:
+            return
+        limit = await self.db.get_collection_limit(ctx.guild.id)
+        if limit is None:
+            await ctx.reply("No collection limit is set for this server.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        else:
+            await ctx.reply(f"Collection limit for this server: **{limit}** Pokémon per user.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @collection_limit_group.command(name="set")
+    @commands.has_permissions(administrator=True)
+    async def collection_limit_set(self, ctx, limit: int):
+        """Set the max number of Pokémon a user may keep in their collection (Admin only).
+
+        Example:
+            p!cl limit set 50
+        """
+        if limit <= 0:
+            await ctx.reply("❌ Limit must be a positive number.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
+        await self.db.set_collection_limit(ctx.guild.id, limit)
+        await ctx.reply(
+            f"✅ Collection limit set to **{limit}** Pokémon per user. "
+            f"Existing collections above this size are left as-is, but new additions will be capped.",
+            mention_author=False,
+            allowed_mentions=NO_MENTIONS,
+        )
+
+    @collection_limit_set.error
+    async def collection_limit_set_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        elif isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
+            await ctx.reply(f"❌ Usage: `{ctx.prefix}cl limit set <number>`", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @collection_limit_group.command(name="clear", aliases=["reset"])
+    @commands.has_permissions(administrator=True)
+    async def collection_limit_clear(self, ctx):
+        """Remove the collection size limit for this server (Admin only)."""
+        await self.db.clear_collection_limit(ctx.guild.id)
+        await ctx.reply("✅ Collection limit removed — collections are now uncapped.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @collection_limit_clear.error
+    async def collection_limit_clear_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @collection_group.command(name="clear")
     async def collection_clear(self, ctx):
@@ -776,34 +887,40 @@ class Collection(commands.Cog):
     cl_group = app_commands.Group(name="cl", description="Manage your Pokémon collection for this server")
 
     @cl_group.command(name="add", description="Add Pokémon to your collection")
+    @app_commands.check(slash_blacklist_check)
     @app_commands.describe(pokemon_names="Pokémon name(s), comma-separated. Append 'all' for all forms e.g. 'Furfrou all'")
     async def slash_collection_add(self, interaction: discord.Interaction, pokemon_names: str):
         ctx = await commands.Context.from_interaction(interaction)
         await self.collection_add(ctx, pokemon_names=pokemon_names)
 
     @cl_group.command(name="remove", description="Remove Pokémon from your collection")
+    @app_commands.check(slash_blacklist_check)
     @app_commands.describe(pokemon_names="Names (comma-sep), 'Furfrou all', or --sr <denom> flags e.g. '--sr 899 --sr 225'")
     async def slash_collection_remove(self, interaction: discord.Interaction, pokemon_names: str):
         ctx = await commands.Context.from_interaction(interaction)
         await self.collection_remove(ctx, pokemon_names=pokemon_names)
 
     @cl_group.command(name="list", description="View your collection in a paginated embed")
+    @app_commands.check(slash_blacklist_check)
     async def slash_collection_list(self, interaction: discord.Interaction):
         ctx = await commands.Context.from_interaction(interaction)
         await self.collection_list(ctx)
 
     @cl_group.command(name="raw", description="View your collection as raw comma-separated text, grouped by SR")
+    @app_commands.check(slash_blacklist_check)
     @app_commands.describe(args="Optional --sr flags to filter by spawn rate, e.g. '--sr 899' or '--sr 225 --sr 337'")
     async def slash_collection_raw(self, interaction: discord.Interaction, args: str = ""):
         ctx = await commands.Context.from_interaction(interaction)
         await self.collection_raw(ctx, args=args)
 
     @cl_group.command(name="clear", description="Clear your entire Pokémon collection")
+    @app_commands.check(slash_blacklist_check)
     async def slash_collection_clear(self, interaction: discord.Interaction):
         ctx = await commands.Context.from_interaction(interaction)
         await self.collection_clear(ctx)
 
     @cl_group.command(name="who", description="See who in this server is collecting a Pokémon")
+    @app_commands.check(slash_blacklist_check)
     @app_commands.describe(pokemon_name="The Pokémon to check, e.g. 'Eevee'")
     async def slash_collection_who(self, interaction: discord.Interaction, pokemon_name: str):
         ctx = await commands.Context.from_interaction(interaction)
