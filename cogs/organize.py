@@ -574,7 +574,7 @@ class Organize(commands.Cog):
 
         active = await self.db.get_active_organize_session_in_guild(ctx.guild.id)
         if active:
-            await ctx.reply(f"❌ There's already an active session in this server. Run `{ctx.prefix}og end` or `{ctx.prefix}og cancel` first. To view current session run `{ctx.prefix}!og view'.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            await ctx.reply(f"❌ There's already an active session in this server. Run `{ctx.prefix}og end` or `{ctx.prefix}og cancel` first. To view current session run `{ctx.prefix}og view`.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
         tmpl = await self.db.get_organize_template(ctx.guild.id, template_name)
