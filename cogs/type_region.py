@@ -3,6 +3,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from config import EMBED_COLOR
+from utils import is_role_blacklisted, slash_blacklist_check
+
+NO_MENTIONS = discord.AllowedMentions.none()
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -345,6 +348,19 @@ class TypeRegionPings(commands.Cog):
         pred_cog = self.bot.get_cog('Prediction')
         return pred_cog.gcache if pred_cog else None
 
+    async def cog_check(self, ctx):
+        """Block members holding a command-blacklisted role."""
+        if ctx.guild is None:
+            return True
+        if await is_role_blacklisted(self.db, ctx.author):
+            await ctx.reply(
+                "🚫 You are blacklisted from using these commands in this server.",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return False
+        return True
+
     # ------------------------------------------------------------------
     # p!tp / p!typepings
     # ------------------------------------------------------------------
@@ -449,12 +465,14 @@ class TypeRegionPings(commands.Cog):
     # Slash Commands  (registered automatically with the cog)
     # ------------------------------------------------------------------
     @app_commands.command(name="tp", description="Open Type Pings menu or toggle types directly")
+    @app_commands.check(slash_blacklist_check)
     @app_commands.describe(types="Type(s) to toggle, space or comma separated. Leave blank for interactive menu.")
     async def slash_type_pings(self, interaction: discord.Interaction, types: str = None):
         ctx = await commands.Context.from_interaction(interaction)
         await self.type_pings_command(ctx, args=types)
 
     @app_commands.command(name="rp", description="Open Region Pings menu or toggle regions directly")
+    @app_commands.check(slash_blacklist_check)
     @app_commands.describe(regions="Region(s) to toggle, space or comma separated. Leave blank for interactive menu.")
     async def slash_region_pings(self, interaction: discord.Interaction, regions: str = None):
         ctx = await commands.Context.from_interaction(interaction)
