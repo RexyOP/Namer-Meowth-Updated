@@ -425,6 +425,41 @@ class Incense(commands.Cog):
     def _bot_mention(self) -> str:
         return self.bot.user.mention if self.bot.user else "@MiniMeowth"
 
+    async def _get_next_channel_mention(self, channel: discord.TextChannel) -> str | None:
+        """
+        Find the "next" channel after `channel` for incense purposes:
+        1. The next channel (by position) within `channel`'s own category.
+        2. If there isn't one, the first channel (by position) of the next
+           monitored category, in guild category-position order — skipping
+           any monitored categories that have no text channels.
+        Returns a channel mention string, or None if there's no next channel.
+        """
+        guild = channel.guild
+        category = channel.category
+
+        if category is not None:
+            siblings = sorted(category.text_channels, key=lambda c: c.position)
+            idx = next((i for i, c in enumerate(siblings) if c.id == channel.id), None)
+            if idx is not None and idx + 1 < len(siblings):
+                return siblings[idx + 1].mention
+
+        monitored_ids = await _get_categories(self.db, guild.id)
+        monitored_cats = [guild.get_channel(cid) for cid in monitored_ids]
+        monitored_cats = [c for c in monitored_cats if isinstance(c, discord.CategoryChannel)]
+        monitored_cats.sort(key=lambda c: c.position)
+
+        current_pos = category.position if category is not None else -1
+        current_id = category.id if category is not None else None
+
+        for cat in monitored_cats:
+            if cat.id == current_id or cat.position <= current_pos:
+                continue
+            chans = sorted(cat.text_channels, key=lambda c: c.position)
+            if chans:
+                return chans[0].mention
+
+        return None
+
     async def cog_command_error(self, ctx: commands.Context, error: Exception):
         """Handle check failures from incense_control_check cleanly (one message only)."""
         if isinstance(error, commands.CheckFailure) and str(error) == "incense_no_role":
@@ -486,10 +521,14 @@ class Incense(commands.Cog):
             if gcache:
                 gcache.invalidate_incense_settings(guild_id)
             try:
-                await message.channel.send(
+                msg = (
                     f"Incense purchased! Poketwo has been restricted in this channel. "
-                    f"Use `{self._bot_mention()} incense help` to learn about the commands.", allowed_mentions=NO_MENTIONS
+                    f"Use `{self._bot_mention()} incense help` to learn about the commands."
                 )
+                next_mention = await self._get_next_channel_mention(message.channel)
+                if next_mention:
+                    msg += f"\n\n# Next channel {next_mention}"
+                await message.channel.send(msg, allowed_mentions=NO_MENTIONS)
             except discord.Forbidden:
                 pass
 
