@@ -748,6 +748,16 @@ class Help(commands.Cog):
             embed.add_field(name="📋 View",     value=f"`{prefix}r list` • `{prefix}r list @user`",                                 inline=False)
             embed.add_field(name="➕ Remove",   value=f"`{prefix}r remove p <pokemon>` • `{prefix}r remove cat <cat>` • `{prefix}r clear`", inline=False)
             embed.add_field(
+                name="🔀 Transfer (to your alt, no permission needed)",
+                value=(
+                    f"`{prefix}r transfer @alt` — move ALL your reserves\n"
+                    f"`{prefix}r transfer p <pokemon,...> @alt` — move matching Pokémon only\n"
+                    f"`{prefix}r transfer cat <category> @alt` — move matching category only\n"
+                    f"Aliases: `{prefix}r tr`, `{prefix}r t` • run `{prefix}r transfer` alone for examples"
+                ),
+                inline=False,
+            )
+            embed.add_field(
                 name="🔐 Admin: Add",
                 value=f"`{prefix}r add p @user <pokemon>` • `{prefix}r add cat @user <cat>`",
                 inline=False,
@@ -755,6 +765,15 @@ class Help(commands.Cog):
             embed.add_field(
                 name="🔐 Admin: Remove / Clear",
                 value=f"`{prefix}r remove p @user <pokemon>` • `{prefix}r clear @user` • `{prefix}r clear --all`",
+                inline=False,
+            )
+            embed.add_field(
+                name="🔐 Admin: Switch / Transfer Between Users",
+                value=(
+                    f"`{prefix}r switch @user1 @user2` — swap their entire reserves\n"
+                    f"`{prefix}r transfer @user1 @user2` — move ALL of user1's reserves to user2\n"
+                    f"`{prefix}r transfer p/cat <name,...> @user1 @user2` — move matching ones only"
+                ),
                 inline=False,
             )
             embed.add_field(
@@ -993,8 +1012,8 @@ class Help(commands.Cog):
                 name="💾 Reserve",
                 value=(
                     f"`{prefix}r list` • `{prefix}r list @user`\n"
-                    f"`{prefix}r remove p/cat` • `{prefix}r clear`\n"
-                    f"**Admin:** `{prefix}r add p/cat @user` • `{prefix}r remove p/cat @user` • `{prefix}r clear @user` • `{prefix}r clear --all`"
+                    f"`{prefix}r remove p/cat` • `{prefix}r clear` • `{prefix}r transfer @alt` *(or `p/cat <name> @alt`)*\n"
+                    f"**Admin:** `{prefix}r add p/cat @user` • `{prefix}r remove p/cat @user` • `{prefix}r clear @user` • `{prefix}r clear --all` • `{prefix}r switch @u1 @u2` • `{prefix}r transfer @u1 @u2`"
                 ),
                 inline=False,
             )
