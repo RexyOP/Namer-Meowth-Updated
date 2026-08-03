@@ -7,7 +7,9 @@ from utils import (
     find_pokemon_by_name_flexible,
     find_all_pokemon_by_name_flexible,
     get_pokemon_with_variants,
-    normalize_pokemon_name
+    normalize_pokemon_name,
+    is_role_blacklisted,
+    slash_blacklist_check,
 )
 from config import EMBED_COLOR
 
@@ -24,6 +26,19 @@ class ShinyHunt(commands.Cog):
     def db(self):
         """Get database from bot"""
         return self.bot.db
+
+    async def cog_check(self, ctx):
+        """Block members holding a command-blacklisted role."""
+        if ctx.guild is None:
+            return True
+        if await is_role_blacklisted(self.db, ctx.author):
+            await ctx.reply(
+                "🚫 You are blacklisted from using these commands in this server.",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return False
+        return True
 
     def get_base_dex_number(self, pokemon_name: str) -> int:
         """Get the base dex number for a Pokemon (ignoring forms)"""
@@ -183,6 +198,76 @@ class ShinyHunt(commands.Cog):
 
         await ctx.reply(response, mention_author=False, allowed_mentions=NO_MENTIONS)
 
+    @shiny_hunt_command.command(name="remove", aliases=["rm"])
+    async def shiny_hunt_remove(self, ctx, *, pokemon_names: str):
+        """Remove specific Pokemon/variants from your current shiny hunt.
+
+        Examples:
+            p!sh remove Meowth                       (stop hunting only base Meowth)
+            p!sh remove Meowth, Galarian Meowth      (remove multiple variants)
+            p!sh remove Furfrou all                  (remove all Furfrou variants)
+        """
+        current_hunts = await self.db.get_user_shiny_hunt(ctx.author.id, ctx.guild.id)
+        if not current_hunts:
+            await ctx.reply("You are not hunting anything.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
+        args_lower = pokemon_names.strip().lower()
+        to_remove = []
+        invalid = []
+
+        if args_lower.endswith(" all") or args_lower.startswith("all "):
+            if args_lower.startswith("all "):
+                base_name = pokemon_names[4:].strip()
+            else:
+                base_name = pokemon_names[:-4].strip()
+            variants = get_pokemon_with_variants(base_name, self.pokemon_data)
+            if variants:
+                to_remove.extend(variants)
+            else:
+                invalid.append(base_name)
+        else:
+            names_list = [name.strip() for name in pokemon_names.split(",") if name.strip()]
+            for name in names_list:
+                matches = find_all_pokemon_by_name_flexible(name, self.pokemon_data)
+                if matches:
+                    for pokemon in matches:
+                        canonical = pokemon.get('name')
+                        if canonical and canonical not in to_remove:
+                            to_remove.append(canonical)
+                else:
+                    invalid.append(name)
+
+        if not to_remove:
+            msg = "❌ No valid Pokemon names found to remove."
+            if invalid:
+                msg += f" Invalid: {', '.join(invalid)}"
+            await ctx.reply(msg, mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
+        current_lower = {p.lower() for p in current_hunts}
+        actually_matched = [p for p in to_remove if p.lower() in current_lower]
+
+        if not actually_matched:
+            await ctx.reply(
+                "None of those Pokemon are in your current hunt — nothing was removed.",
+                mention_author=False, allowed_mentions=NO_MENTIONS
+            )
+            return
+
+        remaining = await self.db.remove_pokemon_from_shiny_hunt(ctx.author.id, ctx.guild.id, actually_matched)
+
+        response = f"✅ Removed from your hunt: {', '.join(actually_matched)}"
+        if remaining:
+            response += f"\n\nNow hunting: {', '.join(f'**{p}**' for p in remaining)}"
+        else:
+            response += "\n\nYou are no longer hunting anything."
+
+        if invalid:
+            response += f"\n❌ Invalid names ignored: {', '.join(invalid)}"
+
+        await ctx.reply(response, mention_author=False, allowed_mentions=NO_MENTIONS)
+
     @staticmethod
     def _build_who_embeds(title: str, user_ids, color=EMBED_COLOR):
         """Build one or more embeds mentioning every user_id given.
@@ -261,6 +346,7 @@ class ShinyHunt(commands.Cog):
         )
 
     @app_commands.command(name="whohunts", description="See who in this server is hunting a Pokémon")
+    @app_commands.check(slash_blacklist_check)
     @app_commands.describe(pokemon_name="The Pokémon to check, e.g. 'Eevee'")
     async def slash_who_hunts(self, interaction: discord.Interaction, pokemon_name: str):
         ctx = await commands.Context.from_interaction(interaction)
@@ -270,6 +356,7 @@ class ShinyHunt(commands.Cog):
     # Slash Commands  (registered automatically with the cog)
     # ------------------------------------------------------------------
     @app_commands.command(name="sh", description="Manage your shiny hunt")
+    @app_commands.check(slash_blacklist_check)
     @app_commands.describe(pokemon="Pokémon to hunt, e.g. 'Furfrou all'. Leave blank to check current hunt, or type 'clear' to stop.")
     async def slash_shiny_hunt(self, interaction: discord.Interaction, pokemon: str = None):
         ctx = await commands.Context.from_interaction(interaction)
