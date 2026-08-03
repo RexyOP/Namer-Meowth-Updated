@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from config import EMBED_COLOR, Emojis
+from utils import is_role_blacklisted, slash_blacklist_check
 
 NO_MENTIONS = discord.AllowedMentions.none()
 
@@ -244,6 +245,29 @@ class Settings(commands.Cog):
     @property
     def db(self):
         return self.bot.db
+
+    async def cog_check(self, ctx):
+        """Block members holding a command-blacklisted role.
+
+        The `p!blacklist` command group itself is exempt so an admin who
+        accidentally blacklists their own role (or needs to fix a mistake)
+        can still manage/clear the blacklist.
+        """
+        if ctx.guild is None:
+            return True
+
+        root = ctx.command.root_parent or ctx.command
+        if root.name == "blacklist":
+            return True
+
+        if await is_role_blacklisted(self.db, ctx.author):
+            await ctx.reply(
+                "🚫 You are blacklisted from using these commands in this server.",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return False
+        return True
 
     # ------------------------------------------------------------------
     # p!afk
@@ -536,6 +560,132 @@ class Settings(commands.Cog):
                 )
 
     # ------------------------------------------------------------------
+    # p!blacklist role [add/remove/list/clear]
+    # ------------------------------------------------------------------
+    @commands.group(name="blacklist", aliases=["bl"], invoke_without_command=True)
+    @commands.has_permissions(administrator=True)
+    async def blacklist_group(self, ctx):
+        """Manage the command blacklist (Admin only).
+
+        Members holding a blacklisted role can't use any settings,
+        collection, shiny hunt, or type/region ping commands in this server.
+
+        Subcommands:
+            p!blacklist role add @role
+            p!blacklist role remove @role
+            p!blacklist role list
+            p!blacklist role clear
+        """
+        p = ctx.prefix
+        await ctx.reply(
+            f"Usage: `{p}blacklist role add @role`, `{p}blacklist role remove @role`, "
+            f"`{p}blacklist role list`, `{p}blacklist role clear`",
+            mention_author=False,
+            allowed_mentions=NO_MENTIONS,
+        )
+
+    @blacklist_group.error
+    async def blacklist_group_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @blacklist_group.group(name="role", invoke_without_command=True)
+    @commands.has_permissions(administrator=True)
+    async def blacklist_role_group(self, ctx):
+        p = ctx.prefix
+        await ctx.reply(
+            f"Usage: `{p}blacklist role add @role`, `{p}blacklist role remove @role`, "
+            f"`{p}blacklist role list`, `{p}blacklist role clear`",
+            mention_author=False,
+            allowed_mentions=NO_MENTIONS,
+        )
+
+    @blacklist_role_group.error
+    async def blacklist_role_group_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @blacklist_role_group.command(name="add")
+    @commands.has_permissions(administrator=True)
+    async def blacklist_role_add(self, ctx, role: discord.Role):
+        """Add a role to the command blacklist.
+
+        Example:
+            p!blacklist role add @Muted
+        """
+        await self.db.add_command_blacklist_role(ctx.guild.id, role.id)
+        await ctx.reply(f"✅ {role.mention} can no longer use these commands.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @blacklist_role_add.error
+    async def blacklist_role_add_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.reply(f"❌ Usage: `{ctx.prefix}blacklist role add @role`", mention_author=False, allowed_mentions=NO_MENTIONS)
+        elif isinstance(error, commands.BadArgument):
+            await ctx.reply("❌ Invalid role. Mention a role or use its ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @blacklist_role_group.command(name="remove")
+    @commands.has_permissions(administrator=True)
+    async def blacklist_role_remove(self, ctx, role: discord.Role):
+        """Remove a role from the command blacklist.
+
+        Example:
+            p!blacklist role remove @Muted
+        """
+        await self.db.remove_command_blacklist_role(ctx.guild.id, role.id)
+        await ctx.reply(f"✅ {role.mention} can use these commands again.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @blacklist_role_remove.error
+    async def blacklist_role_remove_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.reply(f"❌ Usage: `{ctx.prefix}blacklist role remove @role`", mention_author=False, allowed_mentions=NO_MENTIONS)
+        elif isinstance(error, commands.BadArgument):
+            await ctx.reply("❌ Invalid role. Mention a role or use its ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @blacklist_role_group.command(name="list")
+    @commands.has_permissions(administrator=True)
+    async def blacklist_role_list(self, ctx):
+        """List all roles on the command blacklist."""
+        role_ids = await self.db.get_command_blacklist_roles(ctx.guild.id)
+
+        if not role_ids:
+            await ctx.reply("No roles are currently blacklisted.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
+        lines = []
+        for rid in role_ids:
+            role = ctx.guild.get_role(rid)
+            lines.append(role.mention if role else f"*(unknown `{rid}`)*")
+
+        embed = discord.Embed(
+            title="🚫 Command Blacklisted Roles",
+            description="\n".join(lines),
+            color=EMBED_COLOR,
+        )
+        embed.set_footer(text=f"{len(role_ids)} role(s)")
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @blacklist_role_list.error
+    async def blacklist_role_list_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @blacklist_role_group.command(name="clear")
+    @commands.has_permissions(administrator=True)
+    async def blacklist_role_clear(self, ctx):
+        """Clear every role from the command blacklist."""
+        await self.db.clear_command_blacklist_roles(ctx.guild.id)
+        await ctx.reply("✅ Command blacklist cleared.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @blacklist_role_clear.error
+    async def blacklist_role_clear_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    # ------------------------------------------------------------------
     # p!server-settings
     # ------------------------------------------------------------------
     @commands.command(name="server-settings", aliases=["ss", "ssettings", "serversettings"])
@@ -757,16 +907,19 @@ class Settings(commands.Cog):
     # Slash Commands
     # ------------------------------------------------------------------
     @app_commands.command(name="afk", description="Toggle your global AFK status for pings")
+    @app_commands.check(slash_blacklist_check)
     async def slash_afk(self, interaction: discord.Interaction):
         ctx = await commands.Context.from_interaction(interaction)
         await self.afk_command(ctx)
 
     @app_commands.command(name="server-settings", description="View current server settings")
+    @app_commands.check(slash_blacklist_check)
     async def slash_server_settings(self, interaction: discord.Interaction):
         ctx = await commands.Context.from_interaction(interaction)
         await self.server_settings_command(ctx)
 
     @app_commands.command(name="role-rare", description="Set or clear the rare Pokémon ping role (Admin only)")
+    @app_commands.check(slash_blacklist_check)
     @app_commands.describe(role="The role to ping for rare Pokémon. Omit to clear.")
     @app_commands.default_permissions(administrator=True)
     async def slash_role_rare(self, interaction: discord.Interaction, role: discord.Role = None):
@@ -774,6 +927,7 @@ class Settings(commands.Cog):
         await self.role_rare_cmd(ctx, role=role)
 
     @app_commands.command(name="role-regional", description="Set or clear the regional Pokémon ping role (Admin only)")
+    @app_commands.check(slash_blacklist_check)
     @app_commands.describe(role="The role to ping for regional Pokémon. Omit to clear.")
     @app_commands.default_permissions(administrator=True)
     async def slash_role_regional(self, interaction: discord.Interaction, role: discord.Role = None):
@@ -781,6 +935,7 @@ class Settings(commands.Cog):
         await self.role_regional_cmd(ctx, role=role)
 
     @app_commands.command(name="only-pings", description="Toggle or view only-pings mode (Admin only)")
+    @app_commands.check(slash_blacklist_check)
     @app_commands.describe(enabled="true to enable, false to disable, omit to view current status")
     @app_commands.default_permissions(administrator=True)
     async def slash_only_pings(self, interaction: discord.Interaction, enabled: bool = None):
@@ -788,6 +943,7 @@ class Settings(commands.Cog):
         await self.only_pings_command(ctx, enabled=enabled)
 
     @app_commands.command(name="toggle-feature", description="Toggle a server feature (Admin only)")
+    @app_commands.check(slash_blacklist_check)
     @app_commands.describe(feature="Feature to toggle: 'best_name', 'only_pings', 'catch_command', or 'hint_solver'")
     @app_commands.default_permissions(administrator=True)
     async def slash_toggle(self, interaction: discord.Interaction, feature: str):
@@ -795,6 +951,7 @@ class Settings(commands.Cog):
         await self.toggle_command(ctx, feature=feature)
 
     @app_commands.command(name="clear-pings", description="Clear all ping data for a user or the entire server (Admin only)")
+    @app_commands.check(slash_blacklist_check)
     @app_commands.describe(target="@mention or user ID to clear a single user; leave blank to clear all users")
     @app_commands.default_permissions(administrator=True)
     async def slash_clear_pings(self, interaction: discord.Interaction, target: str = None):
