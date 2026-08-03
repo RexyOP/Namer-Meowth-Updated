@@ -101,6 +101,9 @@ class Database:
             # Organize blacklisted roles — per-guild, can't claim spots
             await self.db.organize_blacklisted_roles.create_index("guild_id", unique=True)
 
+            # Command blacklist roles — per-guild, blocked from using commands
+            await self.db.command_blacklist_roles.create_index("guild_id", unique=True)
+
             print("✅ Database indexes created")
         except Exception as e:
             print(f"Warning: Could not create indexes: {e}")
@@ -170,6 +173,34 @@ class Database:
         return collectors
 
     # -------------------------------------------------------------------------
+    # Collection limit (per-guild cap on how many Pokemon a user may hold)
+    # -------------------------------------------------------------------------
+    async def set_collection_limit(self, guild_id: int, limit: int):
+        """Set the max number of Pokemon a user may keep in their collection."""
+        await self.db.guild_settings.update_one(
+            {"guild_id": guild_id},
+            {"$set": {"collection_limit": limit}},
+            upsert=True
+        )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+
+    async def get_collection_limit(self, guild_id: int) -> Optional[int]:
+        """Get the collection limit for a guild, or None if unset."""
+        settings = await self.db.guild_settings.find_one({"guild_id": guild_id})
+        return settings.get('collection_limit') if settings else None
+
+    async def clear_collection_limit(self, guild_id: int):
+        """Remove the collection limit for a guild (no cap)."""
+        await self.db.guild_settings.update_one(
+            {"guild_id": guild_id},
+            {"$unset": {"collection_limit": ""}},
+            upsert=True
+        )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+
+    # -------------------------------------------------------------------------
     # Shiny hunt operations
     # -------------------------------------------------------------------------
     async def set_shiny_hunt(self, user_id: int, guild_id: int, pokemon_names):
@@ -230,6 +261,33 @@ class Database:
                 hunters.append((user_id, user_id in afk_users_set))
 
         return hunters
+
+    async def remove_pokemon_from_shiny_hunt(self, user_id: int, guild_id: int, pokemon_names: List[str]) -> List[str]:
+        """Remove specific Pokemon (by canonical name) from a user's shiny hunt.
+
+        Returns the remaining hunt list after removal (may be empty). If
+        nothing remains, the underlying document is deleted so a later
+        get_user_shiny_hunt() correctly reports "not hunting".
+        """
+        doc = await self.db.shiny_hunts.find_one_and_update(
+            {"user_id": user_id, "guild_id": guild_id},
+            {"$pullAll": {"pokemon": pokemon_names}},
+            return_document=ReturnDocument.AFTER
+        )
+        if not doc:
+            return []
+
+        remaining = doc.get('pokemon', [])
+        if isinstance(remaining, str):
+            remaining = [remaining] if remaining else []
+
+        if not remaining:
+            await self.db.shiny_hunts.delete_one({"user_id": user_id, "guild_id": guild_id})
+
+        if self.gcache:
+            self.gcache.invalidate_shiny_hunts(guild_id)
+
+        return remaining
 
     # -------------------------------------------------------------------------
     # Global AFK operations
@@ -1143,3 +1201,31 @@ class Database:
 
     async def clear_organize_blacklisted_roles(self, guild_id: int):
         await self.db.organize_blacklisted_roles.delete_one({"guild_id": guild_id})
+
+    # -------------------------------------------------------------------------
+    # Command blacklist roles — per-guild; members holding one of these roles
+    # are blocked from using settings/collection/shiny-hunt/type-region commands
+    # -------------------------------------------------------------------------
+    async def get_command_blacklist_roles(self, guild_id: int) -> List[int]:
+        """Get list of role IDs blacklisted from using these commands."""
+        doc = await self.db.command_blacklist_roles.find_one({"guild_id": guild_id})
+        return doc.get('role_ids', []) if doc else []
+
+    async def add_command_blacklist_role(self, guild_id: int, role_id: int):
+        """Add a role to the command blacklist."""
+        await self.db.command_blacklist_roles.update_one(
+            {"guild_id": guild_id},
+            {"$addToSet": {"role_ids": role_id}},
+            upsert=True
+        )
+
+    async def remove_command_blacklist_role(self, guild_id: int, role_id: int):
+        """Remove a role from the command blacklist."""
+        await self.db.command_blacklist_roles.update_one(
+            {"guild_id": guild_id},
+            {"$pull": {"role_ids": role_id}}
+        )
+
+    async def clear_command_blacklist_roles(self, guild_id: int):
+        """Clear all blacklisted roles for a guild."""
+        await self.db.command_blacklist_roles.delete_one({"guild_id": guild_id})
