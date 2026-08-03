@@ -340,6 +340,29 @@ class Reserve(commands.Cog):
                 ids.append(int(tok))
         return ids
 
+    def _extract_trailing_users(self, text: str) -> tuple[str, list[int]]:
+        """
+        Peel up to 2 user mentions/IDs off the END of a string, in order.
+        Used by `transfer` so pokemon/category text (which may contain
+        multiple words, e.g. "pride vivillon") can precede the user(s).
+        Returns (remaining_text, [user_ids]).
+        """
+        mention_re = re.compile(r"^<@!?(\d+)>$")
+        tokens = (text or "").split()
+        ids: list[int] = []
+        while tokens and len(ids) < 2:
+            tok = tokens[-1]
+            m = mention_re.match(tok)
+            if m:
+                ids.insert(0, int(m.group(1)))
+                tokens.pop()
+            elif tok.isdigit() and 17 <= len(tok) <= 20:
+                ids.insert(0, int(tok))
+                tokens.pop()
+            else:
+                break
+        return " ".join(tokens), ids
+
     # ------------------------------------------------------------------
     # Main group
     # ------------------------------------------------------------------
@@ -354,59 +377,102 @@ class Reserve(commands.Cog):
         embed = discord.Embed(
             title="💾 Reserve System",
             color=EMBED_COLOR,
-            description="Server-specific Pokémon reservation system. Users can reserve Pokemon they want to collect!",
+            description=(
+                "Server-specific Pokémon reservation system — reserve the "
+                "Pokémon you want to collect, and view what others have called.\n"
+                "─────────────────────────"
+            ),
         )
 
         embed.add_field(
-            name="👥 **User Commands** (No permission needed)",
+            name="📋 Viewing Reserves",
             value=(
-                f"`{p}r list` — View all reserves in this server (sorted by count)\n"
-                f"`{p}r list @user` — View a specific user's reserves\n"
-                f"`{p}r remove p <pokemon,...>` — Remove Pokemon from your reserves\n"
-                f"`{p}r remove pokemon <pokemon,...>` — Same as above\n"
-                f"`{p}r remove cat <category>` — Remove a category from your reserves\n"
-                f"`{p}r clear` — Clear all your reserves ⚠️\n"
-                f"`{p}r transfer @user` — Move YOUR reserves to another account"
+                f"**{p}r list**\n"
+                f"‣ View everyone's reserves in this server\n"
+                f"**{p}r list @user**\n"
+                f"‣ View just one user's reserves"
             ),
-            inline=False
+            inline=False,
         )
 
         embed.add_field(
-            name="🔐 **Admin Commands** (Admin/Owner only)",
+            name="🎒 Managing Your Own Reserve",
             value=(
-                f"`{p}r add p @user <pokemon,...>` — Add Pokemon to user's reserves\n"
-                f"`{p}r add p <pokemon,...> @user` — Same (mention at end)\n"
-                f"`{p}r add pokemon @user <pokemon,...>` — Same as above\n"
-                f"`{p}r add cat @user <category>` — Add category to user's reserves\n"
-                f"`{p}r remove p @user <pokemon,...>` — Remove Pokemon from user's reserves\n"
-                f"`{p}r remove cat @user <category>` — Remove category from user's reserves\n"
-                f"`{p}r clear @user` — Clear a user's reserves\n"
-                f"`{p}r clear --all` — Clear ALL reserves in server ⚠️\n"
-                f"`{p}r switch @user1 @user2` — Swap two users' reserves\n"
-                f"`{p}r transfer @user1 @user2` — Move user1's reserves to user2"
+                f"**{p}r remove p <pokemon,...>**\n"
+                f"‣ Remove Pokémon from your reserves\n"
+                f"**{p}r remove cat <category>**\n"
+                f"‣ Remove a whole category from your reserves\n"
+                f"**{p}r clear**\n"
+                f"‣ Clear all of your reserves ⚠️\n"
+                f"**{p}r transfer @user**\n"
+                f"‣ Move ALL your reserves to another account\n"
+                f"**{p}r transfer p/cat <name,...> @user**\n"
+                f"‣ Move only matching Pokémon/category to another account"
             ),
-            inline=False
+            inline=False,
         )
 
         embed.add_field(
-            name="🛠️ **Allowed Roles** (Admin only)",
-            value=(
-                f"`{p}r allowedroles` — View allowed roles\n"
-                f"`{p}r allowedroles add <@role|id>` — Add role to reserve permissions\n"
-                f"`{p}r allowedroles remove <@role|id>` — Remove role\n"
-                f"`{p}r allowedroles clear` — Clear all allowed roles"
-            ),
-            inline=False
+            name="\u200b",
+            value="**🔐 Admin & Allowed Roles Only**\n─────────────────────────",
+            inline=False,
         )
 
         embed.add_field(
-            name="💡 **Tips**",
+            name="🛡️ Managing Members' Reserves",
             value=(
-                f"• Aliases: `p` = `pokemon`, `poke` | `cat` = `category`\n"
-                f"• Use `{p}cat defaults` to add built-in categories (rare, regional, gigantamax)\n"
-                f"• Use `{p}help reserve` for detailed help with examples"
+                f"**{p}r add p @user <pokemon,...>**\n"
+                f"‣ Add Pokémon to a user's reserve *(mention can go first or last)*\n"
+                f"**{p}r add cat @user <category>**\n"
+                f"‣ Add a category to a user's reserve\n"
+                f"**{p}r remove p @user <pokemon,...>**\n"
+                f"‣ Remove Pokémon from a user's reserve\n"
+                f"**{p}r remove cat @user <category>**\n"
+                f"‣ Remove a category from a user's reserve\n"
+                f"**{p}r clear @user**\n"
+                f"‣ Clear one user's reserves\n"
+                f"**{p}r clear --all**\n"
+                f"‣ Clear EVERY reserve in the server ⚠️"
             ),
-            inline=False
+            inline=False,
+        )
+
+        embed.add_field(
+            name="🔀 Bulk Tools",
+            value=(
+                f"**{p}r switch @user1 @user2**\n"
+                f"‣ Swap two users' entire reserve lists\n"
+                f"**{p}r transfer @user1 @user2**\n"
+                f"‣ Move ALL of user1's reserves onto user2\n"
+                f"**{p}r transfer p/cat <name,...> @user1 @user2**\n"
+                f"‣ Move only matching Pokémon/category from user1 to user2"
+            ),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="🔧 Allowed Roles Setup",
+            value=(
+                f"**{p}r allowedroles**\n"
+                f"‣ View which roles can use admin reserve commands\n"
+                f"**{p}r allowedroles add/remove <@role|id>**\n"
+                f"‣ Add or remove a role from that list\n"
+                f"**{p}r allowedroles clear**\n"
+                f"‣ Remove all allowed roles"
+            ),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="💡 Tips",
+            value=(
+                f"• Aliases: `p`/`poke` = pokemon, `cat` = category, `sw` = switch, `tr`/`t` = transfer\n"
+                f"• Use `{p}cat defaults` to import built-in categories (rare, regional, gigantamax)\n"
+                f"• Selective transfer only moves what the source *actually has* reserved — "
+                f"e.g. if a category has 35 Pokémon but they've only reserved 29, only those 29 move\n"
+                f"• Use `{p}help reserve` for full command help"
+            ),
+            inline=False,
         )
 
         await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
@@ -861,25 +927,106 @@ class Reserve(commands.Cog):
             )
 
     # ------------------------------------------------------------------
-    # p!reserve transfer @user                 (any member — move YOUR reserves)
-    # p!reserve transfer @user1 @user2          (admin/allowed roles — move user1 -> user2)
+    # p!reserve transfer @user                          (any member — move ALL of YOUR reserves)
+    # p!reserve transfer @user1 @user2                   (admin/allowed roles — move ALL of user1 -> user2)
+    # p!reserve transfer p/cat <name,...> @user          (any member — move MATCHING reserves of yours)
+    # p!reserve transfer p/cat <name,...> @user1 @user2  (admin/allowed roles — move MATCHING user1 -> user2)
     # ------------------------------------------------------------------
-    @reserve_group.command(name="transfer", aliases=["tr"])
-    async def reserve_transfer(self, ctx, *, users: str = None):
+    async def _send_transfer_help(self, ctx):
+        p = ctx.prefix
+        embed = discord.Embed(
+            title="🔀 Reserve Transfer — How To",
+            color=EMBED_COLOR,
+            description=(
+                "Move reserved Pokémon between accounts. Only what the "
+                "source *actually has reserved* gets moved.\n"
+                "─────────────────────────"
+            ),
+        )
+
+        embed.add_field(
+            name="❓ How do I transfer my reserved Pokémon to my alt?",
+            value=f"`{p}r transfer p pikachu,meowth @alt`",
+            inline=False,
+        )
+
+        embed.add_field(
+            name="❓ How do I transfer a reserved category (rare, regional, gigantamax)?",
+            value=f"`{p}r transfer cat rare @alt`",
+            inline=False,
+        )
+
+        embed.add_field(
+            name="❓ How do I transfer ALL my reserved Pokémon?",
+            value=f"`{p}r transfer @alt`",
+            inline=False,
+        )
+
+        embed.add_field(
+            name="🔐 Admin/Allowed Roles Only",
+            value=(
+                f"`{p}r transfer @user1 @user2` — move ALL of user1's reserves to user2\n"
+                f"`{p}r transfer p/cat <name,...> @user1 @user2` — move only matching ones"
+            ),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="💡 Tip",
+            value=f"Aliases: `{p}r t` and `{p}r tr` both work the same as `{p}r transfer`.",
+            inline=False,
+        )
+
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @reserve_group.command(name="transfer", aliases=["tr", "t"])
+    async def reserve_transfer(self, ctx, *, rest: str = None):
         """
         Transfer reserves from one user to another (added on top of whatever
-        the target already has — the source's reserves are cleared).
+        the target already has — moved Pokémon are removed from the source).
 
-        Normal members: p!r transfer @user  — moves YOUR reserves to @user.
-        Admin/allowed roles: p!r transfer @user1 @user2 — moves @user1's
-        reserves to @user2 (does not move anything back from user2).
+        Full transfer (moves everything):
+          p!r transfer @user                — moves YOUR reserves to @user
+          p!r transfer @user1 @user2         — admin only, moves user1 -> user2
+
+        Selective transfer (only moves Pokémon the source actually has
+        reserved that match the given name(s)/category — e.g. if a category
+        has 35 Pokémon but the source only reserved 29 of them, only those
+        29 move):
+          p!r transfer p <pokemon,...> @user
+          p!r transfer cat <category> @user
+          p!r transfer p <pokemon,...> @user1 @user2      — admin only
+          p!r transfer cat <category> @user1 @user2       — admin only
         """
-        user_ids = self._extract_multiple_users(users)
+        if not rest:
+            await self._send_transfer_help(ctx)
+            return
+
+        # --- Detect an optional leading subtype (p/poke/pokemon/cat/category) ---
+        parts = rest.split(None, 1)
+        first = parts[0].lower()
+        subtype: Optional[str] = None
+        remainder = rest
+        if first in ("p", "poke", "pokemon", "cat", "category"):
+            subtype = first
+            remainder = parts[1] if len(parts) > 1 else ""
+
+        # --- Peel 1-2 trailing user mentions/IDs off the remainder ---
+        name_input, user_ids = self._extract_trailing_users(remainder)
 
         if not user_ids:
             await ctx.reply(
-                f"❌ Usage: `{ctx.prefix}r transfer @user` (move your reserves)\n"
-                f"or `{ctx.prefix}r transfer @user1 @user2` (admin only)",
+                f"❌ Could not find a user to transfer to. Use a @mention or user ID at the end.\n"
+                f"Usage: `{ctx.prefix}r transfer @user` or `{ctx.prefix}r transfer p|cat <name,...> @user`",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return
+
+        if subtype is not None and not name_input.strip():
+            await ctx.reply(
+                f"❌ Please provide Pokémon names or a category to transfer.\n"
+                f"Usage: `{ctx.prefix}r transfer p <pokemon,...> @user`",
                 mention_author=False,
                 allowed_mentions=NO_MENTIONS,
             )
@@ -908,35 +1055,104 @@ class Reserve(commands.Cog):
             )
             return
 
+        source_desc = "your" if source_id == ctx.author.id else f"<@{source_id}>'s"
+        who_has = "You have" if source_id == ctx.author.id else f"<@{source_id}> has"
+
         source_list = await self.db.get_user_reserve(source_id, ctx.guild.id)
         if not source_list:
-            who = "You have" if source_id == ctx.author.id else f"<@{source_id}> has"
             await ctx.reply(
-                f"⚠️ {who} no reserves in this server to transfer.",
+                f"⚠️ {who_has} no reserves in this server to transfer.",
                 mention_author=False,
                 allowed_mentions=NO_MENTIONS,
             )
             return
 
-        await self.db.clear_user_reserve(source_id, ctx.guild.id)
-        await self.db.add_pokemon_to_reserve(target_id, ctx.guild.id, source_list)
+        if subtype is None:
+            # ---- Full transfer: move everything ----
+            await self.db.clear_user_reserve(source_id, ctx.guild.id)
+            await self.db.add_pokemon_to_reserve(target_id, ctx.guild.id, source_list)
 
-        source_desc = "your" if source_id == ctx.author.id else f"<@{source_id}>'s"
-        await ctx.reply(
-            f"✅ Transferred {len(source_list)} Pokémon from {source_desc} reserve to <@{target_id}>.",
-            mention_author=False,
-            allowed_mentions=NO_MENTIONS,
+            await ctx.reply(
+                f"✅ Transferred all {len(source_list)} Pokémon from {source_desc} reserve to <@{target_id}>.",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return
+
+        # ---- Selective transfer: only move matching Pokémon ----
+        if subtype in ("pokemon", "poke", "p"):
+            valid, invalid = self._resolve_pokemon_names(name_input)
+            if not valid:
+                msg = "❌ No valid Pokémon names found."
+                if invalid:
+                    msg += f" Invalid: {', '.join(invalid[:10])}"
+                await ctx.reply(msg, mention_author=False, allowed_mentions=NO_MENTIONS)
+                return
+            requested = set(valid)
+            source_desc_extra = ""
+        else:
+            cat_names = [c.strip() for c in name_input.split(",") if c.strip()]
+            if not cat_names:
+                await ctx.reply(
+                    "❌ Please provide at least one category name.",
+                    mention_author=False,
+                    allowed_mentions=NO_MENTIONS,
+                )
+                return
+
+            requested = set()
+            found_sources = []
+            not_found = []
+            for cat_name in cat_names:
+                pokes, source = await self._resolve_category_pokemon(ctx.guild.id, cat_name)
+                if pokes:
+                    requested.update(pokes)
+                    found_sources.append(source)
+                else:
+                    not_found.append(cat_name)
+
+            if not requested:
+                await ctx.reply(
+                    f"❌ No categories found: {', '.join(not_found)}\n"
+                    f"Admins can add built-in categories with `{ctx.prefix}cat defaults`.",
+                    mention_author=False,
+                    allowed_mentions=NO_MENTIONS,
+                )
+                return
+            invalid = not_found
+            source_desc_extra = f" from {', '.join(found_sources)}" if found_sources else ""
+
+        to_move = [p for p in source_list if p in requested]
+
+        if not to_move:
+            await ctx.reply(
+                f"⚠️ None of those matched anything in {source_desc} reserve — nothing was transferred.",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
+            return
+
+        await self.db.remove_pokemon_from_reserve(source_id, ctx.guild.id, to_move)
+        await self.db.add_pokemon_to_reserve(target_id, ctx.guild.id, to_move)
+
+        resp = (
+            f"✅ Transferred {len(to_move)}/{len(requested)} matching Pokémon{source_desc_extra} "
+            f"from {source_desc} reserve to <@{target_id}>"
         )
+        if len(to_move) <= 10:
+            resp += f": {', '.join(sorted(to_move))}"
+        else:
+            resp += f": {', '.join(sorted(to_move)[:10])} and {len(to_move) - 10} more"
+        if invalid:
+            resp += f"\n❌ Not found: {', '.join(invalid[:10])}"
+
+        await ctx.reply(resp, mention_author=False, allowed_mentions=NO_MENTIONS)
 
     @reserve_transfer.error
     async def reserve_transfer_error(self, ctx, error):
         if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.reply(
-                f"❌ Usage: `{ctx.prefix}r transfer @user` (move your reserves)\n"
-                f"or `{ctx.prefix}r transfer @user1 @user2` (admin only)",
-                mention_author=False,
-                allowed_mentions=NO_MENTIONS,
-            )
+            await self._send_transfer_help(ctx)
+
 
     # ------------------------------------------------------------------
     # p!reserve list [user]
