@@ -273,6 +273,15 @@ class Organize(commands.Cog):
             inline=False,
         )
         embed.add_field(
+            name="🔧 Manual spot management (admin/allowed-role only)",
+            value=(
+                f"`{p}og spot` — numbered list of every spot and who holds it\n"
+                f"`{p}og spot set <#> <@member>` — assign a spot to someone, replacing whoever's there\n"
+                f"`{p}og spot clear <#>` — remove whoever holds a spot, opening it back up"
+            ),
+            inline=False,
+        )
+        embed.add_field(
             name="🚫 Blacklist (Admin only)",
             value=(
                 f"`{p}og blacklist` — view blocked roles\n"
@@ -474,6 +483,144 @@ class Organize(commands.Cog):
         new_view = OrganizeSessionView(self, session_id, spots)
         new_msg = await ctx.send(embed=new_embed, view=new_view)
         await self.db.set_organize_session_message(session_id, new_msg.id, channel_id=ctx.channel.id)
+
+    # ------------------------------------------------------------------
+    # Manual spot management — let an admin/allowed-role replace, add, or
+    # remove a claim on any spot directly, without the member clicking.
+    # Every change here is saved to Mongo the same way a button click is
+    # (write confirmed before the live message is touched), then the live
+    # message is refreshed immediately so it never goes stale.
+    # ------------------------------------------------------------------
+    async def _get_active_session_or_reply(self, ctx) -> Optional[dict]:
+        session = await self.db.get_active_organize_session_in_guild(ctx.guild.id)
+        if not session:
+            await ctx.reply("❌ No active session in this server.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return None
+        return session
+
+    async def _refresh_live_message(self, ctx, session: dict, session_id: str, spots: List[dict]):
+        """Re-render the live message after a manual change. The DB write
+        itself already happened (and was confirmed) before this is called."""
+        try:
+            channel = ctx.guild.get_channel(session["channel_id"]) or ctx.channel
+            msg = await channel.fetch_message(session["message_id"])
+        except (discord.NotFound, discord.HTTPException, AttributeError):
+            return
+        embed = build_session_embed(ctx.guild.name, session["template_name"], spots)
+        view = OrganizeSessionView(self, session_id, spots)
+        try:
+            await msg.edit(embed=embed, view=view)
+        except discord.HTTPException:
+            pass
+
+    @organize_group.group(name="spot", aliases=["s"], invoke_without_command=True)
+    async def spot_group(self, ctx):
+        if ctx.invoked_subcommand is None:
+            await self._spot_list(ctx)
+
+    async def _spot_list(self, ctx):
+        session = await self._get_active_session_or_reply(ctx)
+        if not session:
+            return
+        lines = []
+        for i, s in enumerate(session["spots"], start=1):
+            if s.get("reserved_by"):
+                who = f"<@{s['reserved_by']}> ({s.get('reserved_name') or 'Unknown'})"
+            else:
+                who = "*open*"
+            lines.append(f"`{i}.` **{s['label']}** — {who}")
+        embed = discord.Embed(
+            title="📋 Organize — Spot numbers",
+            description="\n".join(lines),
+            color=EMBED_COLOR,
+        )
+        embed.set_footer(text=f"{ctx.prefix}og spot set <#> <@member>  •  {ctx.prefix}og spot clear <#>")
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @spot_group.command(name="set", aliases=["assign", "replace", "add"])
+    async def spot_set(self, ctx, index: int, member: discord.Member):
+        """Force-assign a spot to a member — replaces whoever currently holds it, or claims an open one."""
+        if not await self._has_permission(ctx):
+            await ctx.reply("❌ You don't have permission to manage spots.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
+        session = await self._get_active_session_or_reply(ctx)
+        if not session:
+            return
+
+        spots = session["spots"]
+        i = index - 1
+        if i < 0 or i >= len(spots):
+            await ctx.reply(f"❌ Invalid spot number. Run `{ctx.prefix}og spot` to see the numbered list (1-{len(spots)}).", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
+        session_id = str(session["_id"])
+        previous = spots[i].get("reserved_by")
+
+        try:
+            saved = await self.db.set_organize_session_spot(session_id, i, member.id, member.display_name)
+        except Exception as e:
+            print(f"⚠️ Organize: failed to save manual spot set (session {session_id}, index {i}): {e}")
+            saved = False
+        if not saved:
+            await ctx.reply("❌ Failed to save — the session may have just ended. Nothing changed.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
+        spots[i]["reserved_by"] = member.id
+        spots[i]["reserved_name"] = member.display_name
+        await self._refresh_live_message(ctx, session, session_id, spots)
+
+        if previous and previous != member.id:
+            await ctx.reply(f"✅ **{spots[i]['label']}** moved from <@{previous}> to {member.mention}.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        else:
+            await ctx.reply(f"✅ **{spots[i]['label']}** assigned to {member.mention}.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @spot_group.command(name="clear", aliases=["remove", "unclaim", "open"])
+    async def spot_clear(self, ctx, index: int):
+        """Remove whoever currently holds a spot, opening it back up."""
+        if not await self._has_permission(ctx):
+            await ctx.reply("❌ You don't have permission to manage spots.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
+        session = await self._get_active_session_or_reply(ctx)
+        if not session:
+            return
+
+        spots = session["spots"]
+        i = index - 1
+        if i < 0 or i >= len(spots):
+            await ctx.reply(f"❌ Invalid spot number. Run `{ctx.prefix}og spot` to see the numbered list (1-{len(spots)}).", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
+        session_id = str(session["_id"])
+        previous = spots[i].get("reserved_by")
+        if not previous:
+            await ctx.reply(f"ℹ️ **{spots[i]['label']}** is already open.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
+        try:
+            saved = await self.db.set_organize_session_spot(session_id, i, None, None)
+        except Exception as e:
+            print(f"⚠️ Organize: failed to save manual spot clear (session {session_id}, index {i}): {e}")
+            saved = False
+        if not saved:
+            await ctx.reply("❌ Failed to save — the session may have just ended. Nothing changed.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
+        spots[i]["reserved_by"] = None
+        spots[i]["reserved_name"] = None
+        await self._refresh_live_message(ctx, session, session_id, spots)
+        await ctx.reply(f"✅ **{spots[i]['label']}** cleared — was <@{previous}>, now open.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @spot_set.error
+    @spot_clear.error
+    async def spot_error(self, ctx, error):
+        if isinstance(error, commands.MemberNotFound):
+            await ctx.reply("❌ Couldn't find that member. Use an @mention or their user ID.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.reply(f"❌ Usage: `{ctx.prefix}og spot set <#> <@member>` or `{ctx.prefix}og spot clear <#>`.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        elif isinstance(error, commands.BadArgument):
+            await ctx.reply("❌ Spot number must be a number — check it with `{}og spot`.".format(ctx.prefix), mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ------------------------------------------------------------------
     # Blacklisted roles — can't claim spots
@@ -699,9 +846,7 @@ class Organize(commands.Cog):
         if spot.get("reserved_by") == user.id:
             # Release own claim — always allowed, even if later blacklisted,
             # so nobody gets stuck holding a spot they can't undo.
-            await self.db.set_organize_session_spot(session_id, index, None, None)
-            spot["reserved_by"] = None
-            spot["reserved_name"] = None
+            new_by, new_name = None, None
         elif spot.get("reserved_by"):
             await interaction.response.send_message(
                 f"⚠️ **{spot['label']}** is already claimed by <@{spot['reserved_by']}>.",
@@ -716,9 +861,29 @@ class Organize(commands.Cog):
                     ephemeral=True,
                 )
                 return
-            await self.db.set_organize_session_spot(session_id, index, user.id, user.display_name)
-            spot["reserved_by"] = user.id
-            spot["reserved_name"] = user.display_name
+            new_by, new_name = user.id, user.display_name
+
+        # Save to Mongo FIRST — and confirm it actually wrote — before ever
+        # touching the message. This is what makes a claim durable across
+        # restarts: if the write fails or matches nothing, we bail out
+        # without editing the message, so the button and the DB can never
+        # end up disagreeing (this is what caused stale state to show up
+        # via `og view` after a restart before).
+        try:
+            saved = await self.db.set_organize_session_spot(session_id, index, new_by, new_name)
+        except Exception as e:
+            print(f"⚠️ Organize: failed to save spot claim (session {session_id}, index {index}): {e}")
+            saved = False
+
+        if not saved:
+            await interaction.response.send_message(
+                "⚠️ Couldn't save that claim just now — please try clicking again.",
+                ephemeral=True,
+            )
+            return
+
+        spot["reserved_by"] = new_by
+        spot["reserved_name"] = new_name
 
         embed = build_session_embed(interaction.guild.name, session["template_name"], spots)
         view = OrganizeSessionView(self, session_id, spots)
