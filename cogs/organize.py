@@ -8,6 +8,7 @@ bot restarts (buttons keep working) because state lives in Mongo and the
 views are re-registered on `on_ready`.
 """
 
+import asyncio
 import discord
 from discord.ext import commands
 from typing import List, Optional
@@ -24,6 +25,8 @@ MAX_SPOTS = 25  # Discord hard limit: 5 rows x 5 buttons per message
 
 OPEN_EMOJI = "<:isee:1498926586685034539>"
 CLAIMED_EMOJI = "<:pepethumbup:1504344280435789965>"
+
+PING_AUTO_DISABLE_SECONDS = 300  # ping button self-disables 5 min after `og end`
 
 
 # ---------------------------------------------------------------------------
@@ -85,20 +88,58 @@ class SpotButton(discord.ui.Button):
         await view.cog.handle_spot_click(interaction, self.session_id, self.index)
 
 
+class PingButton(discord.ui.Button):
+    """Shown only on the closed embed after `og end`. Pings everyone who had
+    a claimed spot. Restricted to the same allowed-roles/admin check as the
+    rest of organize, single-use, and auto-disabled after
+    PING_AUTO_DISABLE_SECONDS by the cog (see _auto_disable_ping)."""
+
+    def __init__(self, cog: "Organize", session_id: str, user_ids: List[int]):
+        super().__init__(
+            label="🔔 Ping claimers",
+            style=discord.ButtonStyle.success,
+            custom_id=f"orgping:{session_id}",
+        )
+        self.cog = cog
+        self.session_id = session_id
+        self.user_ids = user_ids
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.cog.handle_ping_click(interaction, self)
+
+
 class OrganizeSessionView(discord.ui.View):
     """Rebuilt fresh from DB state on every click and on bot startup, so it
     always reflects the latest claims. timeout=None + static custom_ids make
-    it a persistent view that survives restarts."""
+    it a persistent view that survives restarts.
 
-    def __init__(self, cog: "Organize", session_id: str, spots: List[dict], closed: bool = False):
+    ping_user_ids, when passed, adds a PingButton for those user ids and
+    reserves a slot for it — spot buttons are capped at MAX_SPOTS - 1 in
+    that case so the row/column limit (5x5) is never exceeded."""
+
+    def __init__(
+        self,
+        cog: "Organize",
+        session_id: str,
+        spots: List[dict],
+        closed: bool = False,
+        ping_user_ids: Optional[List[int]] = None,
+    ):
         super().__init__(timeout=None)
         self.cog = cog
         self.session_id = session_id
-        for i, spot in enumerate(spots[:MAX_SPOTS]):
+        self.ping_button: Optional[PingButton] = None
+
+        spot_cap = (MAX_SPOTS - 1) if ping_user_ids else MAX_SPOTS
+        for i, spot in enumerate(spots[:spot_cap]):
             btn = SpotButton(session_id, i, spot)
             if closed:
                 btn.disabled = True
             self.add_item(btn)
+
+        if ping_user_ids:
+            self.ping_button = PingButton(cog, session_id, ping_user_ids)
+            self.add_item(self.ping_button)
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +152,7 @@ class Organize(commands.Cog):
         self.bot = bot
         self.pokemon_data = load_pokemon_data()
         self._restored = False
+        self._ping_tasks = {}  # session_id -> asyncio.Task (auto-disable timers)
 
     @property
     def db(self):
@@ -774,13 +816,29 @@ class Organize(commands.Cog):
 
         await self.db.set_organize_session_status(session_id, "ended")
 
-        # Disable the buttons on the original message
+        # Users who actually claimed a spot, deduped, order preserved —
+        # this is who the ping button will notify.
+        reserved_user_ids = list(dict.fromkeys(
+            s["reserved_by"] for s in session["spots"] if s.get("reserved_by")
+        ))
+
+        # Disable the claim buttons on the original message, and (if anyone
+        # claimed a spot) add a ping button for allowed roles/admins.
         try:
             channel = ctx.guild.get_channel(session["channel_id"])
             msg = await channel.fetch_message(session["message_id"])
             closed_embed = build_session_embed(ctx.guild.name, session["template_name"], session["spots"], status="ended")
-            closed_view = OrganizeSessionView(self, session_id, session["spots"], closed=True)
+            closed_view = OrganizeSessionView(
+                self, session_id, session["spots"], closed=True,
+                ping_user_ids=reserved_user_ids or None,
+            )
             await msg.edit(embed=closed_embed, view=closed_view)
+
+            if closed_view.ping_button:
+                task = asyncio.create_task(
+                    self._auto_disable_ping(msg, closed_view, closed_view.ping_button, session_id)
+                )
+                self._ping_tasks[session_id] = task
         except (discord.NotFound, discord.HTTPException):
             pass
 
@@ -888,6 +946,67 @@ class Organize(commands.Cog):
         embed = build_session_embed(interaction.guild.name, session["template_name"], spots)
         view = OrganizeSessionView(self, session_id, spots)
         await interaction.response.edit_message(embed=embed, view=view)
+
+    # ------------------------------------------------------------------
+    # Ping button — allowed roles/admins only, single-use, self-disabling
+    # ------------------------------------------------------------------
+    async def handle_ping_click(self, interaction: discord.Interaction, button: "PingButton"):
+        if not await self._has_permission(interaction):
+            await interaction.response.send_message(
+                "❌ You don't have permission to ping claimers.", ephemeral=True
+            )
+            return
+
+        if button.disabled:
+            await interaction.response.send_message(
+                "⚠️ This ping button has already been used or has expired.", ephemeral=True
+            )
+            return
+
+        if not button.user_ids:
+            await interaction.response.send_message(
+                "⚠️ Nobody claimed a spot in this session.", ephemeral=True
+            )
+            return
+
+        # Disable immediately so it can't be double-clicked, and cancel the
+        # scheduled auto-disable timer since we're editing the message now.
+        button.disabled = True
+        task = self._ping_tasks.pop(button.session_id, None)
+        if task:
+            task.cancel()
+
+        await interaction.response.edit_message(view=button.view)
+
+        mentions = " ".join(f"<@{uid}>" for uid in button.user_ids)
+        await interaction.followup.send(
+            f"📣 {mentions} — your claimed spot is ready, please check in!",
+            allowed_mentions=discord.AllowedMentions(users=True),
+        )
+
+    async def _auto_disable_ping(
+        self, message: discord.Message, view: discord.ui.View, button: "PingButton", session_id: str
+    ):
+        """Background timer: disables the ping button on its own after
+        PING_AUTO_DISABLE_SECONDS if nobody's clicked it, so it doesn't
+        stick around indefinitely (e.g. use is skipped, message forgotten).
+        Note: like other in-memory timers, this doesn't survive a bot
+        restart within the window — the button just stops working then,
+        since the session doc is already deleted and won't be restored."""
+        try:
+            await asyncio.sleep(PING_AUTO_DISABLE_SECONDS)
+        except asyncio.CancelledError:
+            return
+        finally:
+            self._ping_tasks.pop(session_id, None)
+
+        if button.disabled:
+            return
+        button.disabled = True
+        try:
+            await message.edit(view=view)
+        except (discord.NotFound, discord.HTTPException):
+            pass
 
 
 async def setup(bot):
