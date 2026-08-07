@@ -104,6 +104,10 @@ class Database:
             # Command blacklist roles — per-guild, blocked from using commands
             await self.db.command_blacklist_roles.create_index("guild_id", unique=True)
 
+            # Bot stats — persistent global counters (e.g. all-time prediction count).
+            # Written in periodic batches, not per-prediction — see increment_bot_stat.
+            await self.db.bot_stats.create_index("key", unique=True)
+
             print("✅ Database indexes created")
         except Exception as e:
             print(f"Warning: Could not create indexes: {e}")
@@ -112,6 +116,29 @@ class Database:
         """Close database connection"""
         if self.client:
             self.client.close()
+
+    # -------------------------------------------------------------------------
+    # Bot stats — persistent global counters
+    # -------------------------------------------------------------------------
+    async def get_bot_stat(self, key: str) -> int:
+        """Read a persistent counter (e.g. 'predictions'). Returns 0 if unset."""
+        doc = await self.db.bot_stats.find_one({"key": key})
+        return doc["count"] if doc else 0
+
+    async def increment_bot_stat(self, key: str, amount: int):
+        """Atomically add `amount` to a persistent counter.
+
+        Call this in periodic batches (e.g. every 30-60s) rather than per-event —
+        an $inc upsert is cheap, but at ~5 predictions/sec you still don't want
+        one write per prediction.
+        """
+        if amount <= 0:
+            return
+        await self.db.bot_stats.update_one(
+            {"key": key},
+            {"$inc": {"count": amount}},
+            upsert=True,
+        )
 
     # -------------------------------------------------------------------------
     # Collection operations
