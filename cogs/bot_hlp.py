@@ -207,6 +207,8 @@ class Help(commands.Cog):
                     f"• `{prefix}toggle only_pings` — only send predictions when someone has pings\n"
                     f"• `{prefix}toggle catch_command` — catch command line in predictions\n"
                     f"• `{prefix}toggle hint_solver` — automatic hint solving\n"
+                    f"• `{prefix}toggle type_pings` — turn type pings on/off server-wide\n"
+                    f"• `{prefix}toggle region_pings` — turn region pings on/off server-wide\n"
                     f"Also accessible via `{prefix}only-pings true/false`"
                 ),
                 inline=False,
@@ -440,13 +442,26 @@ class Help(commands.Cog):
                 value=(
                     "Open the interactive **Region Pings** menu\n"
                     f"**Aliases:** `{prefix}regionpings`\n"
-                    "All 9 regions: Kanto, Johto, Hoenn, Sinnoh, Unova, Kalos, Alola, Galar, Paldea"
+                    "All 13 regions: Kanto, Johto, Hoenn, Sinnoh, Unova, Kalos, Alola, Galar, Paldea, "
+                    "Kitakami, Hisui, Pokopia, Unknown"
                 ),
                 inline=False,
             )
             embed.add_field(
                 name=f"`{prefix}rp <regions>`",
                 value=f"`{prefix}rp kanto` • `{prefix}rp kanto johto hoenn`",
+                inline=False,
+            )
+            embed.add_field(
+                name=f"`{prefix}tp limit` / `{prefix}rp limit`  *(Admin)*",
+                value=(
+                    "View, set, or clear how many types/regions a single user may enable at once\n"
+                    f"• `{prefix}tp limit set 5` — cap each user at 5 enabled types\n"
+                    f"• `{prefix}rp limit set 3` — cap each user at 3 enabled regions\n"
+                    f"• `{prefix}tp limit clear` / `{prefix}rp limit clear` *(alias `reset`)* — remove the cap\n"
+                    f"• `{prefix}tp limit` / `{prefix}rp limit` (no args) — view the current cap\n"
+                    "While a limit is set, the \"Enable All\" button stays disabled."
+                ),
                 inline=False,
             )
             embed.add_field(
@@ -621,7 +636,7 @@ class Help(commands.Cog):
             )
 
         # ── Event Extract ─────────────────────────────────────────────
-        elif category in ["eventextract", "evtx", "event", "eventdata"]:
+        elif category in ["eventextract", "evtx", "eventdata"]:
             embed = discord.Embed(
                 title="📥 Event Extract Commands",
                 description=(
@@ -811,7 +826,7 @@ class Help(commands.Cog):
                 description="Server-specific Pokémon reservation system.",
                 color=EMBED_COLOR,
             )
-            embed.add_field(name="📋 View",     value=f"`{prefix}r list` • `{prefix}r list @user`",                                 inline=False)
+            embed.add_field(name="📋 View",     value=f"`{prefix}r list` • `{prefix}r list @user` • `{prefix}r who <pokemon>` *(see everyone who has it reserved)*", inline=False)
             embed.add_field(name="➕ Remove",   value=f"`{prefix}r remove p <pokemon>` • `{prefix}r remove cat <cat>` • `{prefix}r clear`", inline=False)
             embed.add_field(
                 name="🔀 Transfer (to your alt, no permission needed)",
@@ -869,7 +884,7 @@ class Help(commands.Cog):
                 value=(
                     f"`{prefix}og template create <name>` *(spots on the following lines)*\n"
                     f"`{prefix}og template edit <name>` • `{prefix}og template delete <name>`\n"
-                    f"`{prefix}og template view <name>` • `{prefix}og template list`\n"
+                    f"`{prefix}og template view <name>` • `{prefix}og template` *(no args — lists all templates)*\n"
                     f"`{prefix}og template setdefault <name>` — used by `{prefix}og start` with no argument"
                 ),
                 inline=False,
@@ -1022,7 +1037,7 @@ class Help(commands.Cog):
                 inline=False,
             )
             embed.add_field(name="✨ Shiny Hunt",     value=f"`{prefix}sh` • `{prefix}sh <pokemon>` • `{prefix}sh remove <pokemon>` • `{prefix}sh clear` • `{prefix}sh who`",                     inline=False)
-            embed.add_field(name="🔷 Type & Region",  value=f"`{prefix}tp` • `{prefix}tp <types>` • `{prefix}rp` • `{prefix}rp <regions>`",    inline=False)
+            embed.add_field(name="🔷 Type & Region",  value=f"`{prefix}tp` • `{prefix}tp <types>` • `{prefix}rp` • `{prefix}rp <regions>`\n**Admin:** `{prefix}tp limit set/clear <n>` • `{prefix}rp limit set/clear <n>`", inline=False)
             embed.add_field(
                 name="⚙️ Settings",
                 value=(
@@ -1094,7 +1109,7 @@ class Help(commands.Cog):
             embed.add_field(
                 name="💾 Reserve",
                 value=(
-                    f"`{prefix}r list` • `{prefix}r list @user`\n"
+                    f"`{prefix}r list` • `{prefix}r list @user` • `{prefix}r who <pokemon>`\n"
                     f"`{prefix}r remove p/cat` • `{prefix}r clear` • `{prefix}r transfer @alt` *(or `p/cat <name> @alt`)*\n"
                     f"**Admin:** `{prefix}r add p/cat @user` • `{prefix}r remove p/cat @user` • `{prefix}r clear @user` • `{prefix}r clear --all` • `{prefix}r switch @u1 @u2` • `{prefix}r transfer @u1 @u2`"
                 ),
@@ -1104,7 +1119,7 @@ class Help(commands.Cog):
                 name="🗂️ Organize",
                 value=(
                     f"Everyone: click buttons to claim/release spots\n"
-                    f"**Admin:** `{prefix}og template create/edit/delete/view/list` • `{prefix}og start [template]` • "
+                    f"**Admin:** `{prefix}og template create/edit/delete/view` (no args to list) • `{prefix}og start [template]` • "
                     f"`{prefix}og view` • `{prefix}og end` • `{prefix}og cancel` • `{prefix}og spot set/clear` • `{prefix}og blacklist add/remove/clear`"
                 ),
                 inline=False,
