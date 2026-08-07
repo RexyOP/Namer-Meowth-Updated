@@ -174,6 +174,61 @@ class AFKView(discord.ui.View):
 
 
 # ---------------------------------------------------------------------------
+# Paginated view for p!server-settings
+# ---------------------------------------------------------------------------
+class ServerSettingsView(discord.ui.View):
+    """Simple Previous/Next pager for a list of embeds."""
+
+    def __init__(self, author_id, embeds, timeout=60):
+        super().__init__(timeout=timeout)
+        self.author_id = author_id
+        self.embeds = embeds
+        self.page = 0
+        self.message: discord.Message | None = None
+        self._update_buttons()
+
+    def _update_buttons(self):
+        self.previous_button.disabled = self.page == 0
+        self.next_button.disabled = self.page == len(self.embeds) - 1
+        self.page_button.label = f"Page {self.page + 1}/{len(self.embeds)}"
+
+    async def _check_user(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("This button is not for you!", ephemeral=True, allowed_mentions=NO_MENTIONS)
+            return False
+        return True
+
+    @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.secondary)
+    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check_user(interaction):
+            return
+        self.page = max(0, self.page - 1)
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self.embeds[self.page], view=self)
+
+    @discord.ui.button(label="Page 1/1", style=discord.ButtonStyle.grey, disabled=True)
+    async def page_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        pass  # purely a page indicator, not interactive
+
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check_user(interaction):
+            return
+        self.page = min(len(self.embeds) - 1, self.page + 1)
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self.embeds[self.page], view=self)
+
+    async def on_timeout(self):
+        self.clear_items()
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+        self.message = None
+
+
+# ---------------------------------------------------------------------------
 # Confirm view for /clear-pings
 # ---------------------------------------------------------------------------
 class _ClearPingsConfirmView(discord.ui.View):
@@ -717,79 +772,100 @@ class Settings(commands.Cog):
         def _enabled_dot(val: bool) -> str:
             return "Enabled ✅" if val else "Disabled ❌"
 
-        embed = discord.Embed(
+        # ════════════════════════════════════════════════════════════
+        # Page 1 — roles, limits, toggles
+        # ════════════════════════════════════════════════════════════
+        embed1 = discord.Embed(
             title=f"Server Settings — {ctx.guild.name}",
             color=EMBED_COLOR,
         )
         if ctx.guild.icon:
-            embed.set_thumbnail(url=ctx.guild.icon.url)
+            embed1.set_thumbnail(url=ctx.guild.icon.url)
 
         # ── Ping roles ────────────────────────────────────────────────
         rare_role_id = settings.get("rare_role_id")
         regional_role_id = settings.get("regional_role_id")
-        embed.add_field(name="Rare Role",     value=f"<@&{rare_role_id}>" if rare_role_id else "Not set", inline=True)
-        embed.add_field(name="Regional Role", value=f"<@&{regional_role_id}>" if regional_role_id else "Not set", inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+        embed1.add_field(name="Rare Role",     value=f"<@&{rare_role_id}>" if rare_role_id else "Not set", inline=True)
+        embed1.add_field(name="Regional Role", value=f"<@&{regional_role_id}>" if regional_role_id else "Not set", inline=True)
+        embed1.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
 
         # ── Allowed / blacklisted roles ──────────────────────────────
-        embed.add_field(name="🔥 Incense Allowed Roles",    value=_fmt_roles(inc_role_ids),     inline=True)
-        embed.add_field(name="📌 Reserve Allowed Roles",    value=_fmt_roles(rsv_role_ids),     inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
-        embed.add_field(name="🚫 Command Blacklist Roles",  value=_fmt_roles(cmd_bl_role_ids),  inline=True)
-        embed.add_field(name="🧩 Organize Blacklist Roles", value=_fmt_roles(org_bl_role_ids),  inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+        embed1.add_field(name="🔥 Incense Allowed Roles",    value=_fmt_roles(inc_role_ids),     inline=True)
+        embed1.add_field(name="📌 Reserve Allowed Roles",    value=_fmt_roles(rsv_role_ids),     inline=True)
+        embed1.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+        embed1.add_field(name="🚫 Command Blacklist Roles",  value=_fmt_roles(cmd_bl_role_ids),  inline=True)
+        embed1.add_field(name="🧩 Organize Blacklist Roles", value=_fmt_roles(org_bl_role_ids),  inline=True)
+        embed1.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
 
         # ── Limits ────────────────────────────────────────────────────
         collection_limit = settings.get("collection_limit")
         type_limit = settings.get("type_ping_limit")
         region_limit = settings.get("region_ping_limit")
-        embed.add_field(name="📚 Collection Limit", value=str(collection_limit) if collection_limit is not None else "No limit", inline=True)
-        embed.add_field(name="🔷 Type Ping Limit",   value=str(type_limit) if type_limit is not None else "No limit", inline=True)
-        embed.add_field(name="🌏 Region Ping Limit", value=str(region_limit) if region_limit is not None else "No limit", inline=True)
+        embed1.add_field(name="📚 Collection Limit", value=str(collection_limit) if collection_limit is not None else "No limit", inline=True)
+        embed1.add_field(name="🔷 Type Ping Limit",   value=str(type_limit) if type_limit is not None else "No limit", inline=True)
+        embed1.add_field(name="🌏 Region Ping Limit", value=str(region_limit) if region_limit is not None else "No limit", inline=True)
 
         # ── Type/Region pings server-wide toggle ─────────────────────
         type_pings_enabled = settings.get("type_pings_enabled", True)
         region_pings_enabled = settings.get("region_pings_enabled", True)
-        embed.add_field(name="🔷 Type Pings",   value=_enabled_dot(type_pings_enabled),   inline=True)
-        embed.add_field(name="🌏 Region Pings", value=_enabled_dot(region_pings_enabled), inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+        embed1.add_field(name="🔷 Type Pings",   value=_enabled_dot(type_pings_enabled),   inline=True)
+        embed1.add_field(name="🌏 Region Pings", value=_enabled_dot(region_pings_enabled), inline=True)
+        embed1.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
 
         # ── Feature toggles ──────────────────────────────────────────
         best_name_enabled = settings.get("best_name_enabled", False)
         only_pings = settings.get("only_pings", False)
         catch_command_enabled = settings.get("catch_command_enabled", False)
         hint_solver_enabled = settings.get("hint_solver_enabled", True)
-        embed.add_field(name="Best Name",     value=_enabled_dot(best_name_enabled), inline=True)
-        embed.add_field(name="Only-Pings",    value=_enabled_dot(only_pings), inline=True)
-        embed.add_field(name="Catch Command", value=_enabled_dot(catch_command_enabled), inline=True)
-        embed.add_field(name="Hint Solver",   value=_enabled_dot(hint_solver_enabled), inline=True)
+        embed1.add_field(name="Best Name",     value=_enabled_dot(best_name_enabled), inline=True)
+        embed1.add_field(name="Only-Pings",    value=_enabled_dot(only_pings), inline=True)
+        embed1.add_field(name="Catch Command", value=_enabled_dot(catch_command_enabled), inline=True)
+        embed1.add_field(name="Hint Solver",   value=_enabled_dot(hint_solver_enabled), inline=True)
 
-        # ── Shiny count ───────────────────────────────────────────────
+        # ── Shiny count (number, not the channel) ────────────────────
         shiny_count = settings.get("shiny_count", 0)
-        shiny_count_channel_id = settings.get("shiny_count_channel_id")
-        embed.add_field(name="✨ Shiny Count", value=str(shiny_count), inline=True)
-        embed.add_field(
-            name="✨ Shiny Count Channel",
-            value=f"<#{shiny_count_channel_id}>" if shiny_count_channel_id else "Not set",
-            inline=True,
-        )
-        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
-
-        # ── Other channels ───────────────────────────────────────────
-        captcha_channel_id = settings.get("captcha_channel_id")
         default_organize_template = settings.get("default_organize_template")
-        embed.add_field(
-            name="🔐 Captcha Channel",
-            value=f"<#{captcha_channel_id}>" if captcha_channel_id else "Not set",
-            inline=True,
-        )
-        embed.add_field(
+        embed1.add_field(name="✨ Shiny Count", value=str(shiny_count), inline=True)
+        embed1.add_field(
             name="🧩 Default Organize Template",
             value=default_organize_template if default_organize_template else "Not set",
             inline=True,
         )
-        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+        embed1.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
 
+        embed1.add_field(
+            name="ℹ️ How to configure",
+            value=(
+                f"`{p}role rare/regional @Role` • `{p}blacklist role add @role` • `{p}organize blacklist add @role`\n"
+                f"`{p}cl limit set <n>` • `{p}tp limit set <n>` • `{p}rp limit set <n>`\n"
+                f"`{p}toggle type_pings` • `{p}toggle region_pings`"
+            ),
+            inline=False,
+        )
+
+        embed1.set_footer(text=f"Guild ID: {ctx.guild.id} • Page 1/2")
+
+        # ════════════════════════════════════════════════════════════
+        # Page 2 — all channel info
+        # ════════════════════════════════════════════════════════════
+        embed2 = discord.Embed(
+            title=f"Server Settings — {ctx.guild.name} (Channels)",
+            color=EMBED_COLOR,
+        )
+        if ctx.guild.icon:
+            embed2.set_thumbnail(url=ctx.guild.icon.url)
+
+        def _chan(cid):
+            return f"<#{cid}>" if cid else "Not set"
+
+        # ── Utility channels ──────────────────────────────────────────
+        shiny_count_channel_id = settings.get("shiny_count_channel_id")
+        captcha_channel_id = settings.get("captcha_channel_id")
+        embed2.add_field(name="✨ Shiny Count Channel", value=_chan(shiny_count_channel_id), inline=True)
+        embed2.add_field(name="🔐 Captcha Channel",     value=_chan(captcha_channel_id),     inline=True)
+        embed2.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+
+        # ── Starboard channels ────────────────────────────────────────
         starboard_map = {
             "Catch":       settings.get("starboard_catch_channel_id"),
             "Egg":         settings.get("starboard_egg_channel_id"),
@@ -801,25 +877,20 @@ class Settings(commands.Cog):
             "MissingNo":   settings.get("starboard_missingno_channel_id"),
             "Milestone":   settings.get("starboard_milestone_channel_id"),
         }
-        starboard_lines = [f"{name}: <#{cid}>" for name, cid in starboard_map.items() if cid]
-        embed.add_field(
-            name="📺 Starboard Channels",
-            value="\n".join(starboard_lines) if starboard_lines else "None configured",
-            inline=False,
-        )
+        for name, cid in starboard_map.items():
+            embed2.add_field(name=f"📺 Starboard — {name}", value=_chan(cid), inline=True)
 
-        embed.add_field(
-            name="ℹ️ How to configure",
-            value=(
-                f"`{p}role rare/regional @Role` • `{p}blacklist role add @role` • `{p}organize blacklist add @role`\n"
-                f"`{p}cl limit set <n>` • `{p}tp limit set <n>` • `{p}rp limit set <n>`\n"
-                f"`{p}toggle type_pings` • `{p}toggle region_pings`"
-            ),
-            inline=False,
-        )
+        # pad the last row with spacers so fields line up in 3-column rows
+        remainder = (2 + len(starboard_map)) % 3
+        if remainder:
+            for _ in range(3 - remainder):
+                embed2.add_field(name="\u200b", value="\u200b", inline=True)
 
-        embed.set_footer(text=f"Guild ID: {ctx.guild.id}")
-        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
+        embed2.set_footer(text=f"Guild ID: {ctx.guild.id} • Page 2/2")
+
+        view = ServerSettingsView(author_id=ctx.author.id, embeds=[embed1, embed2])
+        msg = await ctx.reply(embed=embed1, view=view, mention_author=False, allowed_mentions=NO_MENTIONS)
+        view.message = msg
 
     # ------------------------------------------------------------------
     # p!toggle <feature>
