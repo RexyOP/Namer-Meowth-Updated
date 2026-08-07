@@ -752,12 +752,17 @@ class Settings(commands.Cog):
             doc = await self.db.db.user_data.find_one({"user_id": f"incense_guild_{ctx.guild.id}"})
             return (doc or {}).get("incense_allowed_roles", [])
 
-        settings, inc_role_ids, rsv_role_ids, cmd_bl_role_ids, org_bl_role_ids = await asyncio.gather(
+        async def _get_incense_log_channel():
+            doc = await self.db.db.user_data.find_one({"user_id": f"incense_guild_{ctx.guild.id}"})
+            return (doc or {}).get("incense_log_channel")
+
+        settings, inc_role_ids, rsv_role_ids, cmd_bl_role_ids, org_bl_role_ids, incense_log_channel_id = await asyncio.gather(
             self.db.get_guild_settings(ctx.guild.id),
             _get_incense_allowed_roles(),
             self.db.get_reserve_allowed_roles(ctx.guild.id),
             self.db.get_command_blacklist_roles(ctx.guild.id),
             self.db.get_organize_blacklisted_roles(ctx.guild.id),
+            _get_incense_log_channel(),
         )
 
         def _fmt_roles(role_ids: list) -> str:
@@ -863,7 +868,7 @@ class Settings(commands.Cog):
         captcha_channel_id = settings.get("captcha_channel_id")
         embed2.add_field(name="✨ Shiny Count Channel", value=_chan(shiny_count_channel_id), inline=True)
         embed2.add_field(name="🔐 Captcha Channel",     value=_chan(captcha_channel_id),     inline=True)
-        embed2.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+        embed2.add_field(name="🔥 Incense Log Channel", value=_chan(incense_log_channel_id), inline=True)
 
         # ── Starboard channels ────────────────────────────────────────
         starboard_map = {
@@ -881,7 +886,7 @@ class Settings(commands.Cog):
             embed2.add_field(name=f"📺 Starboard — {name}", value=_chan(cid), inline=True)
 
         # pad the last row with spacers so fields line up in 3-column rows
-        remainder = (2 + len(starboard_map)) % 3
+        remainder = (3 + len(starboard_map)) % 3
         if remainder:
             for _ in range(3 - remainder):
                 embed2.add_field(name="\u200b", value="\u200b", inline=True)
