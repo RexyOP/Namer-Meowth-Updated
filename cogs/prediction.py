@@ -3,7 +3,7 @@ import json
 import os
 import discord
 import asyncio
-from discord.ext import commands
+from discord.ext import commands, tasks
 from utils import (
     format_pokemon_prediction,
     get_image_url_from_message,
@@ -17,6 +17,12 @@ from guild_cache import GuildCache
 
 # Hardcoded channel ID where any image will be auto-predicted
 AUTO_PREDICT_CHANNEL_ID = 1453015934393651272
+
+# How often the in-memory prediction counter is flushed to Mongo.
+# At ~5 predictions/sec a per-prediction write is way too much load —
+# batching into one $inc every interval keeps the DB essentially idle
+# while still surviving restarts (see _flush_prediction_stats below).
+PREDICTION_STATS_FLUSH_SECONDS = 600
 
 # ---------------------------------------------------------------------------
 # Constants – all 18 types and 9 main regions (lowercase, canonical)
@@ -135,6 +141,45 @@ class Prediction(commands.Cog):
         _load_best_names()        # warm cache on startup
         _load_type_region_data()  # warm cache on startup
         print(f"[AUTO-PREDICT] Channel ID set to: {AUTO_PREDICT_CHANNEL_ID}")
+
+        # All-time prediction total (survives restarts — see p!stats).
+        # predictions_since_flush is the in-memory buffer written to per
+        # prediction; total_predictions_persisted is the last value read
+        # from / written to Mongo. Both live on the bot so other cogs
+        # (Help) can read them without importing this cog.
+        if not hasattr(bot, 'predictions_since_flush'):
+            bot.predictions_since_flush = 0
+        if not hasattr(bot, 'total_predictions_persisted'):
+            bot.total_predictions_persisted = 0
+        self._flush_prediction_stats.start()
+
+    def cog_unload(self):
+        self._flush_prediction_stats.cancel()
+
+    @tasks.loop(seconds=PREDICTION_STATS_FLUSH_SECONDS)
+    async def _flush_prediction_stats(self):
+        """Batch-write the buffered prediction count to Mongo."""
+        amount = self.bot.predictions_since_flush
+        if amount <= 0:
+            return
+        try:
+            await self.bot.db.increment_bot_stat('predictions', amount)
+            # Only clear the buffer once the write actually succeeds, so a
+            # failed flush just gets retried (and counted) next interval.
+            self.bot.predictions_since_flush -= amount
+            self.bot.total_predictions_persisted += amount
+        except Exception as e:
+            print(f"[PREDICTION-STATS] Flush failed (will retry next interval): {e}")
+
+    @_flush_prediction_stats.before_loop
+    async def _before_flush_prediction_stats(self):
+        await self.bot.wait_until_ready()
+        # Prime the persisted total from Mongo once on startup so p!stats
+        # is correct immediately, instead of showing 0 until the first flush.
+        try:
+            self.bot.total_predictions_persisted = await self.bot.db.get_bot_stat('predictions')
+        except Exception as e:
+            print(f"[PREDICTION-STATS] Could not load persisted total on startup: {e}")
 
     @property
     def db(self):
@@ -419,6 +464,8 @@ class Prediction(commands.Cog):
                 name, confidence = await self.predictor.predict(image_url, self.http_session)
                 if hasattr(self.bot, 'prediction_count'):
                     self.bot.prediction_count += 1
+                # In-memory only — batched to Mongo by _flush_prediction_stats.
+                self.bot.predictions_since_flush += 1
                 cached_result = self.predictor.cache.get(cache_key)
                 model_used = cached_result[2] if cached_result else "unknown"
 
