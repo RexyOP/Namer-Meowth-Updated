@@ -272,7 +272,7 @@ class Organize(commands.Cog):
     # ------------------------------------------------------------------
     # Main group
     # ------------------------------------------------------------------
-    @commands.group(name="organize", aliases=["og", "event"], invoke_without_command=True)
+    @commands.group(name="organize", aliases=["og", "org"], invoke_without_command=True)
     async def organize_group(self, ctx):
         if ctx.invoked_subcommand is None:
             await self._send_help(ctx)
