@@ -1,10 +1,29 @@
 """Help commands"""
+import time
 import discord
 from discord import app_commands
 from discord.ext import commands
 from config import EMBED_COLOR, BOT_PREFIX
 
 NO_MENTIONS = discord.AllowedMentions.none()
+
+
+def format_uptime(seconds: float) -> str:
+    """Format a duration in seconds as 'X days, Y hours, Z minutes, W seconds'"""
+    seconds = int(seconds)
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+
+    parts = []
+    if days:
+        parts.append(f"{days} day{'s' if days != 1 else ''}")
+    if hours:
+        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+    if minutes:
+        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+    parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
+    return ", ".join(parts)
 
 class Help(commands.Cog):
     """Help and information commandss"""
@@ -1225,6 +1244,31 @@ class Help(commands.Cog):
         embed.set_footer(text="Made with ❤️ for the Poketwo community")
         await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
 
+    @commands.command(name="stats")
+    async def stats_command(self, ctx):
+        """Show bot uptime and prediction stats"""
+        # Uptime — derived from process start time, so it needs no separate tracking
+        uptime_seconds = time.time() - self.bot.process.create_time()
+
+        # Session-only counter (see ModelControl) — resets on restart.
+        session_count = getattr(self.bot, 'prediction_count', 0)
+
+        # All-time total = last value flushed to Mongo + whatever's been
+        # predicted since that flush but not yet written (see prediction.py).
+        persisted_total = getattr(self.bot, 'total_predictions_persisted', 0)
+        unflushed = getattr(self.bot, 'predictions_since_flush', 0)
+        all_time_total = persisted_total + unflushed
+
+        embed = discord.Embed(
+            title="📊 Bot Stats",
+            color=EMBED_COLOR,
+        )
+        embed.add_field(name="⏱️ Uptime", value=f"`{format_uptime(uptime_seconds)}`", inline=False)
+        embed.add_field(name="🔮 Total Predictions", value=f"`{all_time_total:,}`", inline=True)
+        embed.add_field(name="📈 This Session", value=f"`{session_count:,}`", inline=True)
+        embed.add_field(name="🌐 Servers", value=f"`{len(self.bot.guilds):,}`", inline=True)
+        await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
+
     @commands.command(name="ping", aliases=["latency", "pong"])
     async def ping_command(self, ctx):
         """Check bot's latency"""
@@ -1275,6 +1319,11 @@ class Help(commands.Cog):
     async def slash_ping(self, interaction: discord.Interaction):
         ctx = await commands.Context.from_interaction(interaction)
         await self.ping_command(ctx)
+
+    @app_commands.command(name="stats", description="Show bot uptime and prediction stats")
+    async def slash_stats(self, interaction: discord.Interaction):
+        ctx = await commands.Context.from_interaction(interaction)
+        await self.stats_command(ctx)
 
 
 async def setup(bot):
