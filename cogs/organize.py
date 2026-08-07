@@ -980,7 +980,7 @@ class Organize(commands.Cog):
 
         mentions = " ".join(f"<@{uid}>" for uid in button.user_ids)
         await interaction.followup.send(
-            f"📣 {mentions} — your claimed spot is ready, please check in!",
+            f"📣 {mentions} — your claimed spot is ready, please check in! \n Also, make sure you are not afk on collection in p!afk.",
             allowed_mentions=discord.AllowedMentions(users=True),
         )
 
