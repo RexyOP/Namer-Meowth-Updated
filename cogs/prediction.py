@@ -252,10 +252,21 @@ class Prediction(commands.Cog):
                         seen.add(uid)
             return regular
 
+        # Server-wide admin toggle: even if a user has type/region pings
+        # enabled individually, they receive nothing while an admin has
+        # disabled it for the whole server. Read straight from the already
+        # cached guild_settings dict — no extra DB queries.
+        type_pings_enabled   = guild_settings.get('type_pings_enabled', True)
+        region_pings_enabled = guild_settings.get('region_pings_enabled', True)
+
         async def _get_type_pingers():
+            if not type_pings_enabled:
+                return []
             return await self.gcache.get_type_pingers(guild_id, types, type_afk_set)
 
         async def _get_region_pingers():
+            if not region_pings_enabled:
+                return []
             return await self.gcache.get_region_pingers(guild_id, regions, region_afk_set)
 
         async def _get_reserve_holders():
