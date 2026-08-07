@@ -201,6 +201,92 @@ class Database:
             self.gcache.invalidate_guild_settings(guild_id)
 
     # -------------------------------------------------------------------------
+    # Type/Region pings — server-wide admin toggle
+    # When disabled, users keep their individual type/region ping selections
+    # in the DB, but they simply won't receive pings until an admin
+    # re-enables it for the server.
+    # -------------------------------------------------------------------------
+    async def get_type_pings_enabled(self, guild_id: int) -> bool:
+        """Whether type pings are enabled server-wide (default True)."""
+        settings = await self.db.guild_settings.find_one({"guild_id": guild_id})
+        return settings.get('type_pings_enabled', True) if settings else True
+
+    async def set_type_pings_enabled(self, guild_id: int, enabled: bool):
+        await self.db.guild_settings.update_one(
+            {"guild_id": guild_id},
+            {"$set": {"type_pings_enabled": enabled}},
+            upsert=True
+        )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+
+    async def get_region_pings_enabled(self, guild_id: int) -> bool:
+        """Whether region pings are enabled server-wide (default True)."""
+        settings = await self.db.guild_settings.find_one({"guild_id": guild_id})
+        return settings.get('region_pings_enabled', True) if settings else True
+
+    async def set_region_pings_enabled(self, guild_id: int, enabled: bool):
+        await self.db.guild_settings.update_one(
+            {"guild_id": guild_id},
+            {"$set": {"region_pings_enabled": enabled}},
+            upsert=True
+        )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+
+    # -------------------------------------------------------------------------
+    # Type/Region ping limits (per-guild cap on how many a single user may
+    # have enabled at once in this server)
+    # -------------------------------------------------------------------------
+    async def get_type_ping_limit(self, guild_id: int) -> Optional[int]:
+        """Get the max number of type pings a user may enable, or None if unset."""
+        settings = await self.db.guild_settings.find_one({"guild_id": guild_id})
+        return settings.get('type_ping_limit') if settings else None
+
+    async def set_type_ping_limit(self, guild_id: int, limit: int):
+        await self.db.guild_settings.update_one(
+            {"guild_id": guild_id},
+            {"$set": {"type_ping_limit": limit}},
+            upsert=True
+        )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+
+    async def clear_type_ping_limit(self, guild_id: int):
+        """Remove the type ping limit for a guild (no cap)."""
+        await self.db.guild_settings.update_one(
+            {"guild_id": guild_id},
+            {"$unset": {"type_ping_limit": ""}},
+            upsert=True
+        )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+
+    async def get_region_ping_limit(self, guild_id: int) -> Optional[int]:
+        """Get the max number of region pings a user may enable, or None if unset."""
+        settings = await self.db.guild_settings.find_one({"guild_id": guild_id})
+        return settings.get('region_ping_limit') if settings else None
+
+    async def set_region_ping_limit(self, guild_id: int, limit: int):
+        await self.db.guild_settings.update_one(
+            {"guild_id": guild_id},
+            {"$set": {"region_ping_limit": limit}},
+            upsert=True
+        )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+
+    async def clear_region_ping_limit(self, guild_id: int):
+        """Remove the region ping limit for a guild (no cap)."""
+        await self.db.guild_settings.update_one(
+            {"guild_id": guild_id},
+            {"$unset": {"region_ping_limit": ""}},
+            upsert=True
+        )
+        if self.gcache:
+            self.gcache.invalidate_guild_settings(guild_id)
+
+    # -------------------------------------------------------------------------
     # Shiny hunt operations
     # -------------------------------------------------------------------------
     async def set_shiny_hunt(self, user_id: int, guild_id: int, pokemon_names):
