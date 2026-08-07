@@ -167,6 +167,14 @@ class ShinyHunt(commands.Cog):
                 # Get the base name for the warning message
                 base_name = self.get_base_name_from_variant(hunted_pokemon)
 
+                # Pull the actual variant names for this Pokemon instead of a
+                # hardcoded "Alolan X, Galarian X" example
+                all_variants = get_pokemon_with_variants(base_name, self.pokemon_data)
+                example_variants = [v for v in all_variants if v != hunted_pokemon][:2]
+                if not example_variants:
+                    example_variants = all_variants[:2]
+                example_line = ", ".join(example_variants)
+
                 embed = discord.Embed(
                     title="⚠️ Variant Warning",
                     description=f"**{hunted_pokemon}** has multiple forms/variants!\n\n"
@@ -174,7 +182,7 @@ class ShinyHunt(commands.Cog):
                                 f"To hunt all variants, use:\n"
                                 f"`p!sh {base_name} all`\n\n"
                                 f"Or specify the exact variants you want:\n"
-                                f"`p!sh Alolan {base_name}, Galarian {base_name}` <- just an example",
+                                f"`p!sh {example_line}` <- just an example",
                     color=0xFFA500  # Orange color for warning
                 )
                 await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
