@@ -393,7 +393,7 @@ class Prediction(commands.Cog):
         lines = [format_pokemon_prediction(name, confidence)]
 
         if show_catch_command:
-            lines.append(f"`<@716390085896962058> c {name.lower()}`")
+            lines.append(f"`<@716390085896962058> c {name.lower()}`\n```<@716390085896962058> c {name.lower()}```")
 
         if show_best_name:
             best = get_best_name(name)
