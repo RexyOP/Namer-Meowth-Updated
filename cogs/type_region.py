@@ -1,4 +1,5 @@
 """Type and Region ping management """
+from typing import Optional
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -60,7 +61,24 @@ def _parse_region_args(args: str) -> list[str]:
     return valid
 
 
-def _type_embed(user: discord.User, enabled_types: list[str]) -> discord.Embed:
+def _admin_disabled_notice(kind: str) -> str:
+    return f"🚫 Server admins have disabled **{kind}** pings in this server. Ask them to enable it."
+
+
+def _limit_reached_notice(kind: str, limit: int) -> str:
+    return f"⚠️ You can only have **{limit}** {kind} ping(s) enabled in this server. Disable one first."
+
+
+def _footer_status(count: int, total: int, limit: Optional[int], admin_enabled: bool) -> str:
+    parts = [f"Click a button to toggle • {count}/{total} enabled"]
+    if limit is not None:
+        parts.append(f"limit: {limit}")
+    if not admin_enabled:
+        parts.append("⚠️ disabled by server admins")
+    return " • ".join(parts)
+
+
+def _type_embed(user: discord.User, enabled_types: list[str], limit: Optional[int] = None, admin_enabled: bool = True) -> discord.Embed:
     lines = []
     for t in ALL_TYPES:
         emoji = TYPE_EMOJI.get(t, "")
@@ -73,13 +91,15 @@ def _type_embed(user: discord.User, enabled_types: list[str]) -> discord.Embed:
     col2 = "\n".join(lines[half:])
 
     embed = discord.Embed(title="🔷 Type Pings", color=EMBED_COLOR)
+    if not admin_enabled:
+        embed.description = _admin_disabled_notice("type")
     embed.add_field(name="\u200b", value=col1, inline=True)
     embed.add_field(name="\u200b", value=col2, inline=True)
-    embed.set_footer(text=f"Click a button to toggle • {len(enabled_types)}/{len(ALL_TYPES)} enabled")
+    embed.set_footer(text=_footer_status(len(enabled_types), len(ALL_TYPES), limit, admin_enabled))
     return embed
 
 
-def _region_embed(user: discord.User, enabled_regions: list[str]) -> discord.Embed:
+def _region_embed(user: discord.User, enabled_regions: list[str], limit: Optional[int] = None, admin_enabled: bool = True) -> discord.Embed:
     lines = []
     for r in ALL_REGIONS:
         emoji = REGION_EMOJI.get(r, "")
@@ -91,7 +111,9 @@ def _region_embed(user: discord.User, enabled_regions: list[str]) -> discord.Emb
         description="\n".join(lines),
         color=EMBED_COLOR
     )
-    embed.set_footer(text=f"Click a button to toggle • {len(enabled_regions)}/{len(ALL_REGIONS)} enabled")
+    if not admin_enabled:
+        embed.description = _admin_disabled_notice("region") + "\n\n" + embed.description
+    embed.set_footer(text=_footer_status(len(enabled_regions), len(ALL_REGIONS), limit, admin_enabled))
     return embed
 
 
@@ -100,12 +122,15 @@ def _region_embed(user: discord.User, enabled_regions: list[str]) -> discord.Emb
 # Discord allows max 5 rows × 5 buttons = 25, we have 18 — fits fine.
 # ---------------------------------------------------------------------------
 class TypePingView(discord.ui.View):
-    def __init__(self, user_id: int, guild_id: int, enabled_types: list[str], cog):
+    def __init__(self, user_id: int, guild_id: int, enabled_types: list[str], cog,
+                 limit: Optional[int] = None, admin_enabled: bool = True):
         super().__init__(timeout=60)  # reduced from 300
         self.user_id = user_id
         self.guild_id = guild_id
         self.enabled_types = list(enabled_types)
         self.cog = cog
+        self.limit = limit
+        self.admin_enabled = admin_enabled
         self._message: discord.Message | None = None
         self._build_buttons()
 
@@ -121,12 +146,16 @@ class TypePingView(discord.ui.View):
             btn.callback = self._make_callback(pokemon_type)
             self.add_item(btn)
 
-        # Enable All button
+        # Enable All button — stays disabled whenever a per-user limit is
+        # set (a limit and "enable everything" are contradictory) or when
+        # server admins have disabled type pings entirely.
+        enable_all_disabled = (self.limit is not None) or (not self.admin_enabled)
         enable_all_btn = discord.ui.Button(
             label="✅ Enable All",
             style=discord.ButtonStyle.primary,
             custom_id="tp_enable_all",
             row=4,
+            disabled=enable_all_disabled,
         )
         enable_all_btn.callback = self._enable_all_callback
         self.add_item(enable_all_btn)
@@ -147,6 +176,18 @@ class TypePingView(discord.ui.View):
                 await interaction.response.send_message("This isn't yours!", ephemeral=True)
                 return
 
+            is_currently_on = pokemon_type in self.enabled_types
+
+            # Only gate the transition from OFF -> ON. Turning something
+            # off is always allowed regardless of admin toggle or limit.
+            if not is_currently_on:
+                if not self.admin_enabled:
+                    await interaction.response.send_message(_admin_disabled_notice("type"), ephemeral=True)
+                    return
+                if self.limit is not None and len(self.enabled_types) >= self.limit:
+                    await interaction.response.send_message(_limit_reached_notice("type", self.limit), ephemeral=True)
+                    return
+
             now_enabled = await self.cog.db.toggle_user_type_ping(
                 self.user_id, self.guild_id, pokemon_type
             )
@@ -163,7 +204,7 @@ class TypePingView(discord.ui.View):
                 self.cog.gcache.invalidate_type_pingers(self.guild_id)
 
             self._build_buttons()
-            embed = _type_embed(interaction.user, self.enabled_types)
+            embed = _type_embed(interaction.user, self.enabled_types, limit=self.limit, admin_enabled=self.admin_enabled)
             await interaction.response.edit_message(embed=embed, view=self)
 
         return callback
@@ -171,6 +212,13 @@ class TypePingView(discord.ui.View):
     async def _enable_all_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("This isn't yours!", ephemeral=True)
+            return
+
+        if not self.admin_enabled:
+            await interaction.response.send_message(_admin_disabled_notice("type"), ephemeral=True)
+            return
+        if self.limit is not None:
+            await interaction.response.send_message(_limit_reached_notice("type", self.limit), ephemeral=True)
             return
 
         for t in ALL_TYPES:
@@ -182,7 +230,7 @@ class TypePingView(discord.ui.View):
             self.cog.gcache.invalidate_type_pingers(self.guild_id)
 
         self._build_buttons()
-        embed = _type_embed(interaction.user, self.enabled_types)
+        embed = _type_embed(interaction.user, self.enabled_types, limit=self.limit, admin_enabled=self.admin_enabled)
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def _disable_all_callback(self, interaction: discord.Interaction):
@@ -198,7 +246,7 @@ class TypePingView(discord.ui.View):
             self.cog.gcache.invalidate_type_pingers(self.guild_id)
 
         self._build_buttons()
-        embed = _type_embed(interaction.user, self.enabled_types)
+        embed = _type_embed(interaction.user, self.enabled_types, limit=self.limit, admin_enabled=self.admin_enabled)
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def on_timeout(self):
@@ -217,12 +265,15 @@ class TypePingView(discord.ui.View):
 # Region ping button view
 # ---------------------------------------------------------------------------
 class RegionPingView(discord.ui.View):
-    def __init__(self, user_id: int, guild_id: int, enabled_regions: list[str], cog):
+    def __init__(self, user_id: int, guild_id: int, enabled_regions: list[str], cog,
+                 limit: Optional[int] = None, admin_enabled: bool = True):
         super().__init__(timeout=60)  # reduced from 300
         self.user_id = user_id
         self.guild_id = guild_id
         self.enabled_regions = list(enabled_regions)
         self.cog = cog
+        self.limit = limit
+        self.admin_enabled = admin_enabled
         self._message: discord.Message | None = None
         self._build_buttons()
 
@@ -238,12 +289,15 @@ class RegionPingView(discord.ui.View):
             btn.callback = self._make_callback(region)
             self.add_item(btn)
 
-        # Enable All button
+        # Enable All button — stays disabled whenever a per-user limit is
+        # set, or when server admins have disabled region pings entirely.
+        enable_all_disabled = (self.limit is not None) or (not self.admin_enabled)
         enable_all_btn = discord.ui.Button(
             label="✅ Enable All",
             style=discord.ButtonStyle.primary,
             custom_id="rp_enable_all",
             row=4,
+            disabled=enable_all_disabled,
         )
         enable_all_btn.callback = self._enable_all_callback
         self.add_item(enable_all_btn)
@@ -264,6 +318,16 @@ class RegionPingView(discord.ui.View):
                 await interaction.response.send_message("This isn't yours!", ephemeral=True)
                 return
 
+            is_currently_on = region in self.enabled_regions
+
+            if not is_currently_on:
+                if not self.admin_enabled:
+                    await interaction.response.send_message(_admin_disabled_notice("region"), ephemeral=True)
+                    return
+                if self.limit is not None and len(self.enabled_regions) >= self.limit:
+                    await interaction.response.send_message(_limit_reached_notice("region", self.limit), ephemeral=True)
+                    return
+
             now_enabled = await self.cog.db.toggle_user_region_ping(
                 self.user_id, self.guild_id, region
             )
@@ -280,7 +344,7 @@ class RegionPingView(discord.ui.View):
                 self.cog.gcache.invalidate_region_pingers(self.guild_id)
 
             self._build_buttons()
-            embed = _region_embed(interaction.user, self.enabled_regions)
+            embed = _region_embed(interaction.user, self.enabled_regions, limit=self.limit, admin_enabled=self.admin_enabled)
             await interaction.response.edit_message(embed=embed, view=self)
 
         return callback
@@ -288,6 +352,13 @@ class RegionPingView(discord.ui.View):
     async def _enable_all_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("This isn't yours!", ephemeral=True)
+            return
+
+        if not self.admin_enabled:
+            await interaction.response.send_message(_admin_disabled_notice("region"), ephemeral=True)
+            return
+        if self.limit is not None:
+            await interaction.response.send_message(_limit_reached_notice("region", self.limit), ephemeral=True)
             return
 
         for r in ALL_REGIONS:
@@ -299,7 +370,7 @@ class RegionPingView(discord.ui.View):
             self.cog.gcache.invalidate_region_pingers(self.guild_id)
 
         self._build_buttons()
-        embed = _region_embed(interaction.user, self.enabled_regions)
+        embed = _region_embed(interaction.user, self.enabled_regions, limit=self.limit, admin_enabled=self.admin_enabled)
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def _disable_all_callback(self, interaction: discord.Interaction):
@@ -315,7 +386,7 @@ class RegionPingView(discord.ui.View):
             self.cog.gcache.invalidate_region_pingers(self.guild_id)
 
         self._build_buttons()
-        embed = _region_embed(interaction.user, self.enabled_regions)
+        embed = _region_embed(interaction.user, self.enabled_regions, limit=self.limit, admin_enabled=self.admin_enabled)
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def on_timeout(self):
@@ -364,7 +435,7 @@ class TypeRegionPings(commands.Cog):
     # ------------------------------------------------------------------
     # p!tp / p!typepings
     # ------------------------------------------------------------------
-    @commands.command(name="tp", aliases=["typepings", "typeping"])
+    @commands.group(name="tp", aliases=["typepings", "typeping"], invoke_without_command=True)
     async def type_pings_command(self, ctx, *, args: str = None):
         """Manage your type pings for this server.
 
@@ -377,6 +448,8 @@ class TypeRegionPings(commands.Cog):
             p!tp bug grass fire           → toggle Bug, Grass, Fire
         """
         enabled = await self.db.get_user_type_pings(ctx.author.id, ctx.guild.id)
+        admin_enabled = await self.db.get_type_pings_enabled(ctx.guild.id)
+        limit = await self.db.get_type_ping_limit(ctx.guild.id)
 
         # Direct toggle via arguments
         if args:
@@ -392,28 +465,54 @@ class TypeRegionPings(commands.Cog):
                 return
 
             toggled = []
+            blocked = []
+            current = list(enabled)
             for t in types_to_toggle:
+                is_on = t in current
+                if not is_on:
+                    if not admin_enabled:
+                        blocked.append(t)
+                        continue
+                    if limit is not None and len(current) >= limit:
+                        blocked.append(t)
+                        continue
+
                 now_on = await self.db.toggle_user_type_ping(ctx.author.id, ctx.guild.id, t)
+                if now_on:
+                    current.append(t)
+                else:
+                    current.remove(t)
                 state = "✅" if now_on else "❌"
                 toggled.append(f"{state} {TYPE_EMOJI.get(t, '')} {t.capitalize()}")
 
+            if self.gcache:
+                self.gcache.invalidate_type_pingers(ctx.guild.id)
+
             # Refresh enabled list
             enabled = await self.db.get_user_type_pings(ctx.author.id, ctx.guild.id)
-            embed = _type_embed(ctx.author, enabled)
-            toggle_text = "\n".join(toggled)
-            await ctx.reply(f"Toggled:\n{toggle_text}", embed=embed, mention_author=False)
+            embed = _type_embed(ctx.author, enabled, limit=limit, admin_enabled=admin_enabled)
+
+            reply_lines = []
+            if toggled:
+                reply_lines.append("Toggled:\n" + "\n".join(toggled))
+            if blocked:
+                if not admin_enabled:
+                    reply_lines.append(_admin_disabled_notice("type"))
+                elif limit is not None:
+                    reply_lines.append(_limit_reached_notice("type", limit) + f" Skipped: {', '.join(blocked)}")
+            await ctx.reply("\n".join(reply_lines) or "No changes made.", embed=embed, mention_author=False)
             return
 
         # Interactive menu
-        view = TypePingView(ctx.author.id, ctx.guild.id, enabled, self)
-        embed = _type_embed(ctx.author, enabled)
+        view = TypePingView(ctx.author.id, ctx.guild.id, enabled, self, limit=limit, admin_enabled=admin_enabled)
+        embed = _type_embed(ctx.author, enabled, limit=limit, admin_enabled=admin_enabled)
         msg = await ctx.reply(embed=embed, view=view, mention_author=False)
         view._message = msg
 
     # ------------------------------------------------------------------
     # p!rp / p!regionpings
     # ------------------------------------------------------------------
-    @commands.command(name="rp", aliases=["regionpings", "regionping"])
+    @commands.group(name="rp", aliases=["regionpings", "regionping"], invoke_without_command=True)
     async def region_pings_command(self, ctx, *, args: str = None):
         """Manage your region pings for this server.
 
@@ -426,6 +525,8 @@ class TypeRegionPings(commands.Cog):
             p!rp kanto johto hoenn        → toggle Kanto, Johto, Hoenn
         """
         enabled = await self.db.get_user_region_pings(ctx.author.id, ctx.guild.id)
+        admin_enabled = await self.db.get_region_pings_enabled(ctx.guild.id)
+        limit = await self.db.get_region_ping_limit(ctx.guild.id)
 
         if args:
             regions_to_toggle = _parse_region_args(args)
@@ -440,8 +541,23 @@ class TypeRegionPings(commands.Cog):
                 return
 
             toggled = []
+            blocked = []
+            current = list(enabled)
             for r in regions_to_toggle:
+                is_on = r in current
+                if not is_on:
+                    if not admin_enabled:
+                        blocked.append(r)
+                        continue
+                    if limit is not None and len(current) >= limit:
+                        blocked.append(r)
+                        continue
+
                 now_on = await self.db.toggle_user_region_ping(ctx.author.id, ctx.guild.id, r)
+                if now_on:
+                    current.append(r)
+                else:
+                    current.remove(r)
                 state = "✅" if now_on else "❌"
                 toggled.append(f"{state} {REGION_EMOJI.get(r, '')} {r.capitalize()}")
 
@@ -450,16 +566,134 @@ class TypeRegionPings(commands.Cog):
                 self.gcache.invalidate_region_pingers(ctx.guild.id)
 
             enabled = await self.db.get_user_region_pings(ctx.author.id, ctx.guild.id)
-            embed = _region_embed(ctx.author, enabled)
-            toggle_text = "\n".join(toggled)
-            await ctx.reply(f"Toggled:\n{toggle_text}", embed=embed, mention_author=False)
+            embed = _region_embed(ctx.author, enabled, limit=limit, admin_enabled=admin_enabled)
+
+            reply_lines = []
+            if toggled:
+                reply_lines.append("Toggled:\n" + "\n".join(toggled))
+            if blocked:
+                if not admin_enabled:
+                    reply_lines.append(_admin_disabled_notice("region"))
+                elif limit is not None:
+                    reply_lines.append(_limit_reached_notice("region", limit) + f" Skipped: {', '.join(blocked)}")
+            await ctx.reply("\n".join(reply_lines) or "No changes made.", embed=embed, mention_author=False)
             return
 
         # Interactive menu
-        view = RegionPingView(ctx.author.id, ctx.guild.id, enabled, self)
-        embed = _region_embed(ctx.author, enabled)
+        view = RegionPingView(ctx.author.id, ctx.guild.id, enabled, self, limit=limit, admin_enabled=admin_enabled)
+        embed = _region_embed(ctx.author, enabled, limit=limit, admin_enabled=admin_enabled)
         msg = await ctx.reply(embed=embed, view=view, mention_author=False)
         view._message = msg
+
+    # ------------------------------------------------------------------
+    # p!tp limit — view/set/clear the per-user type ping cap (Admin only)
+    # ------------------------------------------------------------------
+    @type_pings_command.group(name="limit", invoke_without_command=True)
+    async def type_ping_limit_group(self, ctx):
+        """View, set, or clear how many type pings a single user may enable.
+
+        Subcommands:
+            p!tp limit set 5     — cap each user at 5 enabled types (Admin only)
+            p!tp limit clear     — remove the cap
+            p!tp limit reset     — same as clear
+
+        Run without a subcommand to see the current limit. While a limit
+        is set, the "Enable All" button stays disabled.
+        """
+        if ctx.invoked_subcommand is not None:
+            return
+        limit = await self.db.get_type_ping_limit(ctx.guild.id)
+        if limit is None:
+            await ctx.reply("No type ping limit is set for this server.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        else:
+            await ctx.reply(f"Type ping limit for this server: **{limit}** type(s) per user.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @type_ping_limit_group.command(name="set")
+    @commands.has_permissions(administrator=True)
+    async def type_ping_limit_set(self, ctx, limit: int):
+        """Set the max number of type pings a user may enable (Admin only)."""
+        if limit <= 0:
+            await ctx.reply("❌ Limit must be a positive number.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+        await self.db.set_type_ping_limit(ctx.guild.id, limit)
+        await ctx.reply(
+            f"✅ Type ping limit set to **{limit}** per user. The Enable All button is now disabled.",
+            mention_author=False, allowed_mentions=NO_MENTIONS,
+        )
+
+    @type_ping_limit_set.error
+    async def type_ping_limit_set_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        elif isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
+            await ctx.reply(f"❌ Usage: `{ctx.prefix}tp limit set <number>`", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @type_ping_limit_group.command(name="clear", aliases=["reset"])
+    @commands.has_permissions(administrator=True)
+    async def type_ping_limit_clear(self, ctx):
+        """Remove the type ping limit for this server (Admin only)."""
+        await self.db.clear_type_ping_limit(ctx.guild.id)
+        await ctx.reply("✅ Type ping limit removed.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @type_ping_limit_clear.error
+    async def type_ping_limit_clear_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    # ------------------------------------------------------------------
+    # p!rp limit — view/set/clear the per-user region ping cap (Admin only)
+    # ------------------------------------------------------------------
+    @region_pings_command.group(name="limit", invoke_without_command=True)
+    async def region_ping_limit_group(self, ctx):
+        """View, set, or clear how many region pings a single user may enable.
+
+        Subcommands:
+            p!rp limit set 3     — cap each user at 3 enabled regions (Admin only)
+            p!rp limit clear     — remove the cap
+            p!rp limit reset     — same as clear
+
+        Run without a subcommand to see the current limit. While a limit
+        is set, the "Enable All" button stays disabled.
+        """
+        if ctx.invoked_subcommand is not None:
+            return
+        limit = await self.db.get_region_ping_limit(ctx.guild.id)
+        if limit is None:
+            await ctx.reply("No region ping limit is set for this server.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        else:
+            await ctx.reply(f"Region ping limit for this server: **{limit}** region(s) per user.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @region_ping_limit_group.command(name="set")
+    @commands.has_permissions(administrator=True)
+    async def region_ping_limit_set(self, ctx, limit: int):
+        """Set the max number of region pings a user may enable (Admin only)."""
+        if limit <= 0:
+            await ctx.reply("❌ Limit must be a positive number.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+        await self.db.set_region_ping_limit(ctx.guild.id, limit)
+        await ctx.reply(
+            f"✅ Region ping limit set to **{limit}** per user. The Enable All button is now disabled.",
+            mention_author=False, allowed_mentions=NO_MENTIONS,
+        )
+
+    @region_ping_limit_set.error
+    async def region_ping_limit_set_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
+        elif isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
+            await ctx.reply(f"❌ Usage: `{ctx.prefix}rp limit set <number>`", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @region_ping_limit_group.command(name="clear", aliases=["reset"])
+    @commands.has_permissions(administrator=True)
+    async def region_ping_limit_clear(self, ctx):
+        """Remove the region ping limit for this server (Admin only)."""
+        await self.db.clear_region_ping_limit(ctx.guild.id)
+        await ctx.reply("✅ Region ping limit removed.", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+    @region_ping_limit_clear.error
+    async def region_ping_limit_clear_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ You need administrator permissions to use this command.", mention_author=False, allowed_mentions=NO_MENTIONS)
 
     # ------------------------------------------------------------------
     # Slash Commands  (registered automatically with the cog)
