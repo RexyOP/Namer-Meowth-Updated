@@ -380,7 +380,9 @@ class Reserve(commands.Cog):
             color=EMBED_COLOR,
             description=(
                 "Server-specific Pokémon reservation system — reserve the "
-                "Pokémon you want to collect, and view what others have called.\n"
+                "Pokémon you want to collect, and view what others have called.\n\n"
+                f"📖 **{p}r** *(this command, no arguments)* — shows this menu\n"
+                f"Aliases: `{p}reserve` = `{p}r`\n"
                 "─────────────────────────"
             ),
         )
