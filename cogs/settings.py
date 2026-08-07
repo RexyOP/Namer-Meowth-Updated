@@ -37,7 +37,7 @@ class AFKView(discord.ui.View):
         shiny_btn.callback = self.toggle_shiny_hunt_afk
         self.add_item(shiny_btn)
 
-        col_btn = _btn("Collection", collection_afk, "afk_collection")
+        col_btn = _btn("Collection/Reserve", collection_afk, "afk_collection")
         col_btn.callback = self.toggle_collection_afk
         self.add_item(col_btn)
 
@@ -81,7 +81,7 @@ class AFKView(discord.ui.View):
             title="Global AFK Status",
             description=(
                 f"✨ ShinyHunt Pings: {_dot(shiny_hunt_afk)}\n"
-                f"📚 Collection Pings: {_dot(collection_afk)}\n"
+                f"📚 Collection/Reserve Pings: {_dot(collection_afk)}\n"
                 f"🔷 Type Pings: {_dot(type_ping_afk)}\n"
                 f"🌏 Region Pings: {_dot(region_ping_afk)}\n\n"
                 "*AFK status applies across all servers*"
@@ -287,7 +287,7 @@ class Settings(commands.Cog):
             title="Global AFK Status",
             description=(
                 f"✨ ShinyHunt Pings: {_dot(shy_afk)}\n"
-                f"📚 Collection Pings: {_dot(col_afk)}\n"
+                f"📚 Collection/Reserve Pings: {_dot(col_afk)}\n"
                 f"🔷 Type Pings: {_dot(type_afk)}\n"
                 f"🌏 Region Pings: {_dot(rgn_afk)}\n\n"
                 "*AFK status applies across all servers*"
@@ -688,40 +688,133 @@ class Settings(commands.Cog):
     # ------------------------------------------------------------------
     # p!server-settings
     # ------------------------------------------------------------------
-    @commands.command(name="server-settings", aliases=["ss", "ssettings", "serversettings"])
+    @commands.command(name="server-settings", aliases=["ss", "ssettings", "serversettings", "settings"])
     async def server_settings_command(self, ctx):
-        """View current server settings"""
-        settings = await self.db.get_guild_settings(ctx.guild.id)
+        """View current server settings — roles, limits, toggles, and channels."""
         p = ctx.prefix
+
+        async def _get_incense_allowed_roles():
+            doc = await self.db.db.user_data.find_one({"user_id": f"incense_guild_{ctx.guild.id}"})
+            return (doc or {}).get("incense_allowed_roles", [])
+
+        settings, inc_role_ids, rsv_role_ids, cmd_bl_role_ids, org_bl_role_ids = await asyncio.gather(
+            self.db.get_guild_settings(ctx.guild.id),
+            _get_incense_allowed_roles(),
+            self.db.get_reserve_allowed_roles(ctx.guild.id),
+            self.db.get_command_blacklist_roles(ctx.guild.id),
+            self.db.get_organize_blacklisted_roles(ctx.guild.id),
+        )
+
+        def _fmt_roles(role_ids: list) -> str:
+            if not role_ids:
+                return "Not set"
+            parts = []
+            for rid in role_ids:
+                role = ctx.guild.get_role(rid)
+                parts.append(role.mention if role else f"*(unknown `{rid}`)*")
+            return "\n".join(parts)
+
+        def _enabled_dot(val: bool) -> str:
+            return "Enabled ✅" if val else "Disabled ❌"
 
         embed = discord.Embed(
             title=f"Server Settings — {ctx.guild.name}",
             color=EMBED_COLOR,
         )
+        if ctx.guild.icon:
+            embed.set_thumbnail(url=ctx.guild.icon.url)
 
+        # ── Ping roles ────────────────────────────────────────────────
         rare_role_id = settings.get("rare_role_id")
-        embed.add_field(name="Rare Role",     value=f"<@&{rare_role_id}>" if rare_role_id else "Not set", inline=True)
-
         regional_role_id = settings.get("regional_role_id")
+        embed.add_field(name="Rare Role",     value=f"<@&{rare_role_id}>" if rare_role_id else "Not set", inline=True)
         embed.add_field(name="Regional Role", value=f"<@&{regional_role_id}>" if regional_role_id else "Not set", inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
 
-        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer row
+        # ── Allowed / blacklisted roles ──────────────────────────────
+        embed.add_field(name="🔥 Incense Allowed Roles",    value=_fmt_roles(inc_role_ids),     inline=True)
+        embed.add_field(name="📌 Reserve Allowed Roles",    value=_fmt_roles(rsv_role_ids),     inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+        embed.add_field(name="🚫 Command Blacklist Roles",  value=_fmt_roles(cmd_bl_role_ids),  inline=True)
+        embed.add_field(name="🧩 Organize Blacklist Roles", value=_fmt_roles(org_bl_role_ids),  inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
 
+        # ── Limits ────────────────────────────────────────────────────
+        collection_limit = settings.get("collection_limit")
+        type_limit = settings.get("type_ping_limit")
+        region_limit = settings.get("region_ping_limit")
+        embed.add_field(name="📚 Collection Limit", value=str(collection_limit) if collection_limit is not None else "No limit", inline=True)
+        embed.add_field(name="🔷 Type Ping Limit",   value=str(type_limit) if type_limit is not None else "No limit", inline=True)
+        embed.add_field(name="🌏 Region Ping Limit", value=str(region_limit) if region_limit is not None else "No limit", inline=True)
+
+        # ── Type/Region pings server-wide toggle ─────────────────────
+        type_pings_enabled = settings.get("type_pings_enabled", True)
+        region_pings_enabled = settings.get("region_pings_enabled", True)
+        embed.add_field(name="🔷 Type Pings",   value=_enabled_dot(type_pings_enabled),   inline=True)
+        embed.add_field(name="🌏 Region Pings", value=_enabled_dot(region_pings_enabled), inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+
+        # ── Feature toggles ──────────────────────────────────────────
         best_name_enabled = settings.get("best_name_enabled", False)
-        embed.add_field(name="Best Name",        value="Enabled ✅" if best_name_enabled else "Disabled ❌", inline=True)
-
         only_pings = settings.get("only_pings", False)
-        embed.add_field(name="Only-Pings",       value="Enabled ✅" if only_pings else "Disabled ❌", inline=True)
-
         catch_command_enabled = settings.get("catch_command_enabled", False)
-        embed.add_field(name="Catch Command",    value="Enabled ✅" if catch_command_enabled else "Disabled ❌", inline=True)
-
         hint_solver_enabled = settings.get("hint_solver_enabled", True)
-        embed.add_field(name="Hint Solver",      value="Enabled ✅" if hint_solver_enabled else "Disabled ❌", inline=True)
+        embed.add_field(name="Best Name",     value=_enabled_dot(best_name_enabled), inline=True)
+        embed.add_field(name="Only-Pings",    value=_enabled_dot(only_pings), inline=True)
+        embed.add_field(name="Catch Command", value=_enabled_dot(catch_command_enabled), inline=True)
+        embed.add_field(name="Hint Solver",   value=_enabled_dot(hint_solver_enabled), inline=True)
+
+        # ── Shiny count ───────────────────────────────────────────────
+        shiny_count = settings.get("shiny_count", 0)
+        shiny_count_channel_id = settings.get("shiny_count_channel_id")
+        embed.add_field(name="✨ Shiny Count", value=str(shiny_count), inline=True)
+        embed.add_field(
+            name="✨ Shiny Count Channel",
+            value=f"<#{shiny_count_channel_id}>" if shiny_count_channel_id else "Not set",
+            inline=True,
+        )
+        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+
+        # ── Other channels ───────────────────────────────────────────
+        captcha_channel_id = settings.get("captcha_channel_id")
+        default_organize_template = settings.get("default_organize_template")
+        embed.add_field(
+            name="🔐 Captcha Channel",
+            value=f"<#{captcha_channel_id}>" if captcha_channel_id else "Not set",
+            inline=True,
+        )
+        embed.add_field(
+            name="🧩 Default Organize Template",
+            value=default_organize_template if default_organize_template else "Not set",
+            inline=True,
+        )
+        embed.add_field(name="\u200b", value="\u200b", inline=True)  # spacer
+
+        starboard_map = {
+            "Catch":       settings.get("starboard_catch_channel_id"),
+            "Egg":         settings.get("starboard_egg_channel_id"),
+            "Unbox":       settings.get("starboard_unbox_channel_id"),
+            "Shiny":       settings.get("starboard_shiny_channel_id"),
+            "Gigantamax":  settings.get("starboard_gigantamax_channel_id"),
+            "High IV":     settings.get("starboard_highiv_channel_id"),
+            "Low IV":      settings.get("starboard_lowiv_channel_id"),
+            "MissingNo":   settings.get("starboard_missingno_channel_id"),
+            "Milestone":   settings.get("starboard_milestone_channel_id"),
+        }
+        starboard_lines = [f"{name}: <#{cid}>" for name, cid in starboard_map.items() if cid]
+        embed.add_field(
+            name="📺 Starboard Channels",
+            value="\n".join(starboard_lines) if starboard_lines else "None configured",
+            inline=False,
+        )
 
         embed.add_field(
-            name="📺 Channel Config",
-            value=f"Use `{p}channel settings` to view all configured channels",
+            name="ℹ️ How to configure",
+            value=(
+                f"`{p}role rare/regional @Role` • `{p}blacklist role add @role` • `{p}organize blacklist add @role`\n"
+                f"`{p}cl limit set <n>` • `{p}tp limit set <n>` • `{p}rp limit set <n>`\n"
+                f"`{p}toggle type_pings` • `{p}toggle region_pings`"
+            ),
             inline=False,
         )
 
@@ -741,6 +834,8 @@ class Settings(commands.Cog):
             p!toggle only_pings
             p!toggle catch_command
             p!toggle hint_solver
+            p!toggle type_pings
+            p!toggle region_pings
         """
         if feature is None:
             p = ctx.prefix
@@ -750,7 +845,9 @@ class Settings(commands.Cog):
                     f"`{p}toggle best_name` — Toggle best-name display\n"
                     f"`{p}toggle only_pings` — Toggle only-pings mode\n"
                     f"`{p}toggle catch_command` — Toggle catch command line in predictions\n"
-                    f"`{p}toggle hint_solver` — Toggle automatic hint solving"
+                    f"`{p}toggle hint_solver` — Toggle automatic hint solving\n"
+                    f"`{p}toggle type_pings` — Toggle type pings server-wide\n"
+                    f"`{p}toggle region_pings` — Toggle region pings server-wide"
                 ),
                 color=EMBED_COLOR,
             )
@@ -787,9 +884,26 @@ class Settings(commands.Cog):
             status = "enabled ✅" if new_val else "disabled ❌"
             await ctx.reply(f"Hint solver is now **{status}**", mention_author=False, allowed_mentions=NO_MENTIONS)
 
+        elif feature == "type_pings":
+            current = await self.db.get_type_pings_enabled(ctx.guild.id)
+            new_val = not current
+            await self.db.set_type_pings_enabled(ctx.guild.id, new_val)
+            status = "enabled ✅" if new_val else "disabled ❌"
+            note = "" if new_val else " Users keep their individual type ping selections, but won't receive pings until this is re-enabled."
+            await ctx.reply(f"Type pings are now **{status}** server-wide.{note}", mention_author=False, allowed_mentions=NO_MENTIONS)
+
+        elif feature == "region_pings":
+            current = await self.db.get_region_pings_enabled(ctx.guild.id)
+            new_val = not current
+            await self.db.set_region_pings_enabled(ctx.guild.id, new_val)
+            status = "enabled ✅" if new_val else "disabled ❌"
+            note = "" if new_val else " Users keep their individual region ping selections, but won't receive pings until this is re-enabled."
+            await ctx.reply(f"Region pings are now **{status}** server-wide.{note}", mention_author=False, allowed_mentions=NO_MENTIONS)
+
         else:
             await ctx.reply(
-                f"❌ Unknown feature `{feature}`. Available: `best_name`, `only_pings`, `catch_command`, `hint_solver`",
+                f"❌ Unknown feature `{feature}`. Available: `best_name`, `only_pings`, `catch_command`, "
+                f"`hint_solver`, `type_pings`, `region_pings`",
                 mention_author=False,
                 allowed_mentions=NO_MENTIONS,
             )
