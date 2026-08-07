@@ -9,6 +9,7 @@ from typing import List, Optional
 from utils import (
     load_pokemon_data,
     find_all_pokemon_by_name_flexible,
+    find_pokemon_by_name_flexible,
     get_pokemon_with_variants,
 )
 from config import EMBED_COLOR
@@ -390,7 +391,9 @@ class Reserve(commands.Cog):
                 f"**{p}r list**\n"
                 f"‣ View everyone's reserves in this server\n"
                 f"**{p}r list @user**\n"
-                f"‣ View just one user's reserves"
+                f"‣ View just one user's reserves\n"
+                f"**{p}r who <pokemon>**\n"
+                f"‣ See who has a specific Pokémon reserved"
             ),
             inline=False,
         )
@@ -1153,6 +1156,98 @@ class Reserve(commands.Cog):
         if isinstance(error, commands.MissingRequiredArgument):
             await self._send_transfer_help(ctx)
 
+
+    # ------------------------------------------------------------------
+    # p!reserve who <pokemon>
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _build_who_embeds(title: str, user_ids: List[int], color=EMBED_COLOR) -> List[discord.Embed]:
+        """Build one or more embeds mentioning every user_id given.
+
+        Splits into multiple embeds if the mention list would exceed a
+        single embed description's comfortable size.
+        """
+        if not user_ids:
+            return []
+
+        mentions = [f"<@{uid}>" for uid in user_ids]
+
+        max_chars = 3800
+        pages: List[List[str]] = []
+        current: List[str] = []
+        current_len = 0
+
+        for mention in mentions:
+            needed = len(mention) + (2 if current else 0)  # ", " separator
+            if current and current_len + needed > max_chars:
+                pages.append(current)
+                current = [mention]
+                current_len = len(mention)
+            else:
+                current.append(mention)
+                current_len += needed
+
+        if current:
+            pages.append(current)
+
+        total_pages = len(pages)
+        embeds = []
+        for i, page in enumerate(pages, start=1):
+            embed_title = title if total_pages == 1 else f"{title} ({i}/{total_pages})"
+            embed = discord.Embed(
+                title=embed_title,
+                description=", ".join(page),
+                color=color,
+            )
+            embed.set_footer(text=f"{len(user_ids)} total")
+            embeds.append(embed)
+
+        return embeds
+
+    @reserve_group.command(name="who", aliases=["w"])
+    async def reserve_who(self, ctx, *, pokemon_name: str):
+        """Check who in this server has a Pokémon reserved.
+
+        Examples:
+            p!r who Missingno
+            p!r w Ralts
+        """
+        pokemon = find_pokemon_by_name_flexible(pokemon_name, self.pokemon_data)
+
+        if not pokemon or not pokemon.get('name'):
+            await ctx.reply(f"❌ Invalid Pokemon name: {pokemon_name}", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
+        resolved_name = pokemon['name']
+
+        user_ids = await self.db.get_reserve_holders_for_pokemon(ctx.guild.id, [resolved_name])
+
+        # Reserve AFK piggybacks on the collection AFK flag, so exclude
+        # collection-AFK users the same way p!cl who does.
+        if user_ids:
+            afk_users = set(await self.db.get_collection_afk_users())
+            user_ids = [uid for uid in user_ids if uid not in afk_users]
+
+        if not user_ids:
+            await ctx.reply(f"No one in this server has **{resolved_name}** reserved.", mention_author=False, allowed_mentions=NO_MENTIONS)
+            return
+
+        embeds = self._build_who_embeds(f"💾 Reserved by — {resolved_name}", user_ids)
+
+        await ctx.reply(
+            embeds=embeds,
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions(users=True),
+        )
+
+    @reserve_who.error
+    async def reserve_who_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.reply(
+                f"❌ Usage: `{ctx.prefix}r who <pokemon>` (e.g. `{ctx.prefix}r who Ralts`)",
+                mention_author=False,
+                allowed_mentions=NO_MENTIONS,
+            )
 
     # ------------------------------------------------------------------
     # p!reserve list [user]
