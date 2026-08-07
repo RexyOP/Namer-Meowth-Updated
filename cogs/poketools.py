@@ -188,7 +188,9 @@ def _shiny_usage_embed() -> discord.Embed:
         "`p!shr` — show this help + rates at chain 0\n"
         "`p!shr 50` — shiny rates at chain 50\n"
         "`p!shr 89%` — how many encounters for an 89% cumulative shiny chance\n"
-        "`p!shr 50 89%` — both at once"
+        "`p!shr 50 89%` — both at once\n\n"
+        "Reply to a Pokétwo Shiny Hunt embed with `p!shr` (optionally adding "
+        "a `target%`) and the chain is pulled automatically from the embed."
     )
     embed.add_field(
         name="Chain 0 — No Charm",
@@ -539,6 +541,25 @@ def _extract_objectid_from_embed(message: discord.Message) -> Optional[str]:
     return None
 
 
+def _extract_chain_from_embed(message: discord.Message) -> Optional[int]:
+    """
+    Search a message's embeds for a Pokétwo Shiny Hunt "Chain" field
+    (e.g. field name "Chain", value "10") and return it as an int.
+    Returns None if no such field is found.
+    """
+    for embed in message.embeds:
+        for field in embed.fields:
+            name = (field.name or "").strip().lower()
+            if "chain" in name:
+                match = re.search(r"[\d,]+", field.value or "")
+                if match:
+                    try:
+                        return int(match.group().replace(",", ""))
+                    except ValueError:
+                        continue
+    return None
+
+
 def _date_response_text(dt: datetime.datetime) -> str:
     """Return a plain Discord timestamp string for a caught date."""
     unix_ts = int(dt.timestamp())
@@ -709,16 +730,16 @@ class PokeTools(commands.Cog, name="PokeTools"):
         """
         Show shiny rates or encounters needed for a target cumulative chance.
         Usage: p!shr [chain] [target%]
+
+        Reply to a Pokétwo Shiny Hunt embed with p!shr (with or without a
+        target%) to auto-pull your current chain from the embed's "Chain" field.
         """
-        if not args:
-            await ctx.send(embed=_shiny_usage_embed(), allowed_mentions=NO_MENTIONS)
-            return
+        chain: Optional[int] = None
+        target: Optional[float] = None
+        errors = []
+        auto_detected = False
 
-        async with ctx.typing():
-            chain: Optional[int] = None
-            target: Optional[float] = None
-            errors = []
-
+        if args:
             for token in args.split():
                 if token.endswith("%"):
                     try:
@@ -743,9 +764,29 @@ class PokeTools(commands.Cog, name="PokeTools"):
                 await ctx.send("❌ " + "\n❌ ".join(errors), allowed_mentions=NO_MENTIONS)
                 return
 
+        # If no explicit chain was typed, try to auto-pull it from a
+        # replied-to Pokétwo Shiny Hunt embed's "Chain" field.
+        if chain is None and ctx.message.reference and ctx.message.reference.message_id:
+            replied_msg = ctx.message.reference.resolved
+            if not isinstance(replied_msg, discord.Message):
+                replied_msg = await _resolve_message(ctx.channel, ctx.message.reference.message_id, self.bot)
+            if replied_msg is not None:
+                detected = _extract_chain_from_embed(replied_msg)
+                if detected is not None:
+                    chain = detected
+                    auto_detected = True
+
+        if chain is None and target is None:
+            await ctx.send(embed=_shiny_usage_embed(), allowed_mentions=NO_MENTIONS)
+            return
+
+        async with ctx.typing():
             embeds = []
             if chain is not None:
-                embeds.append(_build_shiny_rate_embed(chain))
+                chain_embed = _build_shiny_rate_embed(chain)
+                if auto_detected:
+                    chain_embed.set_author(name="📎 Chain auto-detected from replied embed")
+                embeds.append(chain_embed)
             if target is not None:
                 embeds.append(_build_chain_target_embed(target))
 
