@@ -35,6 +35,8 @@ PING_AUTO_DISABLE_SECONDS = 300  # ping button self-disables 5 min after `og end
 def _spot_button_label(spot: dict) -> str:
     """Label shown on the button itself (short — Discord caps at 80 chars)."""
     label = spot["label"]
+    if spot.get("type") == "reserve":
+        label = f"🔖 {label}"
     if spot.get("price"):
         label = f"{label} — {spot['price']}"
     return label[:80]
@@ -44,7 +46,8 @@ def _spot_line(spot: dict) -> str:
     """One line of the embed description for a single spot."""
     emoji = CLAIMED_EMOJI if spot.get("reserved_by") else OPEN_EMOJI
     price_txt = f" ({spot['price']})" if spot.get("price") else ""
-    line = f"{emoji} **{spot['label']}**{price_txt}"
+    label = f"🔖 {spot['label']}" if spot.get("type") == "reserve" else spot["label"]
+    line = f"{emoji} **{label}**{price_txt}"
     if spot.get("reserved_by"):
         name = spot.get("reserved_name") or "Unknown"
         line += f"\n> <@{spot['reserved_by']}> ({name})"
@@ -220,6 +223,11 @@ class Organize(commands.Cog):
             return {"type": "pokemon", "label": value, "value": value, "price": price}
         elif type_raw in ("cat", "category"):
             return {"type": "category", "label": value, "value": value, "price": price}
+        elif type_raw in ("reserve", "res", "r"):
+            # A claimable placeholder spot — no Pokémon/category attached.
+            # Never added to the reserve DB on `og end`; just claimable and
+            # pingable, e.g. "reserve | Reserve 1".
+            return {"type": "reserve", "label": value, "value": value, "price": price}
         return None
 
     async def _parse_template_body(self, ctx, body: str) -> tuple[List[dict], List[str]]:
@@ -236,6 +244,8 @@ class Organize(commands.Cog):
                 if not cat:
                     errors.append(f"Unknown category: `{spot['value']}`")
                     continue
+            elif spot["type"] == "reserve":
+                pass  # nothing to validate — just a claimable placeholder
             else:
                 resolved = self._resolve_pokemon_spot(spot["value"])
                 if not resolved:
@@ -264,6 +274,8 @@ class Organize(commands.Cog):
     async def _resolve_spot_final(self, guild_id: int, spot: dict) -> List[str]:
         """Resolve a spot to its final Pokémon list at session-start time
         (categories are looked up live so edits to them are respected)."""
+        if spot["type"] == "reserve":
+            return []  # never resolves to Pokémon — `og end` won't touch reserves for it
         if spot["type"] == "category":
             cat = await self.db.get_category(guild_id, spot["value"])
             return cat.get("pokemon", []) if cat else []
@@ -291,6 +303,7 @@ class Organize(commands.Cog):
                 f"  `pokemon | Pride Pyroar | 250k pc`\n"
                 f"  `pokemon | Pride Vivillon`\n"
                 f"  `category | Rare`\n"
+                f"  `reserve | Reserve 1` — claimable placeholder spot; never added to reserves on `{p}og end`, but still pinged\n"
                 f"`{p}og template edit <name>` — same format, replaces all spots\n"
                 f"`{p}og template view <name>` — see a template's spots\n"
                 f"`{p}og template list` — list saved templates\n"
@@ -807,8 +820,14 @@ class Organize(commands.Cog):
 
         session_id = str(session["_id"])
         added_summary = []
+        reserve_summary = []  # claimed "reserve" spots — never added to the DB
         for s in session["spots"]:
-            if not s.get("reserved_by") or not s.get("resolved"):
+            if not s.get("reserved_by"):
+                continue
+            if s.get("type") == "reserve":
+                reserve_summary.append(f"<@{s['reserved_by']}> → **{s['label']}**")
+                continue
+            if not s.get("resolved"):
                 continue
             await self.db.add_pokemon_to_reserve(s["reserved_by"], ctx.guild.id, s["resolved"])
             price = f" ({s['price']})" if s.get("price") else ""
@@ -846,13 +865,17 @@ class Organize(commands.Cog):
         # session doc so closed events don't pile up in Mongo.
         await self.db.delete_organize_session(session_id)
 
-        if not added_summary:
+        if not added_summary and not reserve_summary:
             await ctx.reply("✅ Session ended. Nobody had claimed a spot, so nothing was added to reserves.", mention_author=False, allowed_mentions=NO_MENTIONS)
             return
 
+        description = "\n".join(added_summary) if added_summary else "*(none)*"
+        if reserve_summary:
+            description += "\n\n**🔖 Reserve spots claimed (not added to reserves):**\n" + "\n".join(reserve_summary)
+
         embed = discord.Embed(
             title="✅ Organize session committed to reserves",
-            description="\n".join(added_summary),
+            description=description,
             color=EMBED_COLOR,
         )
         await ctx.reply(embed=embed, mention_author=False, allowed_mentions=NO_MENTIONS)
