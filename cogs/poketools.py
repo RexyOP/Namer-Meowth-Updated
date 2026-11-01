@@ -1070,7 +1070,7 @@ class PokeTools(commands.Cog, name="PokeTools"):
 
         await interaction.followup.send(" ".join(ids), allowed_mentions=NO_MENTIONS)
 
-    @commands.command(name="extractids", aliases=["extract", "eids"])
+    @commands.command(name="extract", aliases=["extractids", "e"])
     async def extractids_prefix(self, ctx: commands.Context, message_id: Optional[int] = None):
         """
         Extract Pokétwo pokémon/listing IDs from an embed, space-separated.
