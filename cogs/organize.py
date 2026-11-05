@@ -208,6 +208,7 @@ class Organize(commands.Cog):
     # Spot parsing — one spot per line:
     #   pokemon | <name>            (auto-expands shared/event names)
     #   pokemon | <name> all        (all variants of a base species)
+    #   pokemon | <name>, <name>    (several Pokémon in ONE spot — one claim gets all)
     #   category | <category name>
     # Optional trailing " | <price>" on either.
     # ------------------------------------------------------------------
@@ -220,6 +221,11 @@ class Organize(commands.Cog):
         price = parts[2] if len(parts) > 2 and parts[2] else None
 
         if type_raw in ("pokemon", "poke", "p"):
+            # "Simipour,Applin" / "Simipour , Applin" -> "Simipour, Applin"
+            names = self._split_pokemon_names(value)
+            if not names:
+                return None
+            value = ", ".join(names)
             return {"type": "pokemon", "label": value, "value": value, "price": price}
         elif type_raw in ("cat", "category"):
             return {"type": "category", "label": value, "value": value, "price": price}
@@ -247,15 +253,32 @@ class Organize(commands.Cog):
             elif spot["type"] == "reserve":
                 pass  # nothing to validate — just a claimable placeholder
             else:
-                resolved = self._resolve_pokemon_spot(spot["value"])
-                if not resolved:
-                    errors.append(f"Unknown Pokémon: `{spot['value']}`")
+                # Every comma-separated name must resolve, otherwise the spot
+                # would silently commit fewer Pokémon than the template shows.
+                unknown = [
+                    n for n in self._split_pokemon_names(spot["value"])
+                    if not self._resolve_single_pokemon(n)
+                ]
+                if unknown:
+                    errors.append(f"Unknown Pokémon: `{'`, `'.join(unknown)}`")
                     continue
             spots.append(spot)
         return spots, errors
 
-    def _resolve_pokemon_spot(self, value: str) -> List[str]:
-        """Resolve a 'pokemon' spot's raw value to concrete Pokémon names.
+    @staticmethod
+    def _split_pokemon_names(value: str) -> List[str]:
+        """Split a 'pokemon' spot value on commas into individual names,
+        dropping blanks and exact duplicates (case-insensitive)."""
+        names, seen = [], set()
+        for part in value.split(","):
+            part = part.strip()
+            if part and part.lower() not in seen:
+                seen.add(part.lower())
+                names.append(part)
+        return names
+
+    def _resolve_single_pokemon(self, value: str) -> List[str]:
+        """Resolve ONE name to concrete Pokémon names.
         Supports 'X all' for every variant of a base species, and otherwise
         expands to every Pokémon sharing that display name (e.g. an event
         name shared by many form variants, like 'Pride Vivillon')."""
@@ -270,6 +293,16 @@ class Organize(commands.Cog):
             if n and n not in names:
                 names.append(n)
         return names
+
+    def _resolve_pokemon_spot(self, value: str) -> List[str]:
+        """Resolve a 'pokemon' spot's raw value (one or more comma-separated
+        names) to the combined, de-duplicated list of concrete Pokémon."""
+        combined: List[str] = []
+        for name in self._split_pokemon_names(value):
+            for n in self._resolve_single_pokemon(name):
+                if n not in combined:
+                    combined.append(n)
+        return combined
 
     async def _resolve_spot_final(self, guild_id: int, spot: dict) -> List[str]:
         """Resolve a spot to its final Pokémon list at session-start time
@@ -302,6 +335,7 @@ class Organize(commands.Cog):
                 f"`{p}og template create <name>` — then on the next lines, one spot per line:\n"
                 f"  `pokemon | Pride Pyroar | 250k pc`\n"
                 f"  `pokemon | Pride Vivillon`\n"
+                f"  `pokemon | Simipour, Applin` — several Pokémon in one spot (comma-separated)\n"
                 f"  `category | Rare`\n"
                 f"  `reserve | Reserve 1` — claimable placeholder spot; never added to reserves on `{p}og end`, but still pinged\n"
                 f"`{p}og template edit <name>` — same format, replaces all spots\n"
