@@ -3063,6 +3063,214 @@
     "rarity": "Event"
   },
   {
+    "dex_number": 192,
+    "name": "Blooming Sunflora",
+    "other_names": {
+      "🇬🇧": [
+        "Blooming Sunflora",
+        "Halloween Sunflora"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Sunflora",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 192,
+    "name": "Shrivelled Sunflora",
+    "other_names": {
+      "🇬🇧": [
+        "Shrivelled Sunflora",
+        "Halloween Sunflora"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Sunflora",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 359,
+    "name": "Celestial Absol",
+    "other_names": {
+      "🇬🇧": [
+        "Celestial Absol",
+        "Halloween Absol"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Absol",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 359,
+    "name": "Void Absol",
+    "other_names": {
+      "🇬🇧": [
+        "Void Absol",
+        "Halloween Absol"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Absol",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 494,
+    "name": "Cherub Victini",
+    "other_names": {
+      "🇬🇧": [
+        "Cherub Victini",
+        "Halloween Victini"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Victini",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 494,
+    "name": "Imp Victini",
+    "other_names": {
+      "🇬🇧": [
+        "Imp Victini",
+        "Halloween Victini"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Victini",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 516,
+    "name": "Medusa Simipour",
+    "other_names": {
+      "🇬🇧": [
+        "Medusa Simipour",
+        "Halloween Simipour"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Simipour",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 516,
+    "name": "Statue Simipour",
+    "other_names": {
+      "🇬🇧": [
+        "Statue Simipour",
+        "Halloween Simipour"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Simipour",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 579,
+    "name": "Cauldron Reuniclus",
+    "other_names": {
+      "🇬🇧": [
+        "Cauldron Reuniclus",
+        "Halloween Reuniclus"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Reuniclus",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 579,
+    "name": "Elixir Reuniclus",
+    "other_names": {
+      "🇬🇧": [
+        "Elixir Reuniclus",
+        "Halloween Reuniclus"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Reuniclus",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 770,
+    "name": "Castle Palossand",
+    "other_names": {
+      "🇬🇧": [
+        "Castle Palossand",
+        "Halloween Palossand"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Palossand",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 770,
+    "name": "Haunted House Palossand",
+    "other_names": {
+      "🇬🇧": [
+        "Haunted House Palossand",
+        "Halloween Palossand"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Palossand",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 840,
+    "name": "Enchanted Applin",
+    "other_names": {
+      "🇬🇧": [
+        "Enchanted Applin",
+        "Halloween Applin"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Applin",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 840,
+    "name": "Rotten Applin",
+    "other_names": {
+      "🇬🇧": [
+        "Rotten Applin",
+        "Halloween Applin"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Applin",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 908,
+    "name": "Oracle Meowscarada",
+    "other_names": {
+      "🇬🇧": [
+        "Oracle Meowscarada",
+        "Halloween Meowscarada"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Meowscarada",
+    "rarity": "Event"
+  },
+  {
+    "dex_number": 908,
+    "name": "Witch Meowscarada",
+    "other_names": {
+      "🇬🇧": [
+        "Witch Meowscarada",
+        "Halloween Meowscarada"
+      ]
+    },
+    "is_variant": true,
+    "variant_of": "Meowscarada",
+    "rarity": "Event"
+  },
+  {
     "dex_number": 775,
     "name": "Proud Sydneysider Komala",
     "other_names": {
